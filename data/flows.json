@@ -1,0 +1,2294 @@
+{
+  "categories": [
+    {
+      "id": "toys",
+      "label": "おもちゃ・フィギュア・ぬいぐるみ・模型",
+      "chapter": "95",
+      "start": "toys_1"
+    },
+    {
+      "id": "cards",
+      "label": "カード類（トレカ・プレイングカード）",
+      "chapter": "49/95",
+      "start": "cards_1"
+    },
+    {
+      "id": "games",
+      "label": "テレビゲーム・ゲーム機・アクセサリー",
+      "chapter": "95/85",
+      "start": "games_1"
+    },
+    {
+      "id": "apparel",
+      "label": "衣類（上着・ズボン・Tシャツ等）",
+      "chapter": "61/62",
+      "start": "apparel_1"
+    },
+    {
+      "id": "footwear",
+      "label": "靴・スニーカー・サンダル",
+      "chapter": "64",
+      "start": "footwear_1"
+    },
+    {
+      "id": "bags",
+      "label": "バッグ・財布・革小物",
+      "chapter": "42",
+      "start": "bags_1"
+    },
+    {
+      "id": "watches",
+      "label": "時計（腕時計・懐中時計）",
+      "chapter": "91",
+      "start": "watches_1"
+    },
+    {
+      "id": "jewelry",
+      "label": "ジュエリー・アクセサリー・イミテーション",
+      "chapter": "71",
+      "start": "jewelry_1"
+    },
+    {
+      "id": "books",
+      "label": "書籍・印刷物・ポスター",
+      "chapter": "49",
+      "start": "books_1"
+    },
+    {
+      "id": "ceramics",
+      "label": "陶磁器・食器（セラミックス）",
+      "chapter": "69",
+      "start": "ceramics_1"
+    },
+    {
+      "id": "electronics",
+      "label": "家電・電子部品・周辺機器",
+      "chapter": "85",
+      "start": "electronics_1"
+    },
+    {
+      "id": "plastics",
+      "label": "プラスチック製品",
+      "chapter": "39",
+      "start": "plastics_1"
+    }
+  ],
+  "nodes": {
+    "toys_1": {
+      "question": "種類を選んでください。",
+      "answers": [
+        {
+          "label": "フィギュア・人形（ぬいぐるみ以外）",
+          "next": "toys_age_figure"
+        },
+        {
+          "label": "ぬいぐるみ（綿・ポリ等の充填）",
+          "next": "toys_age_plush"
+        },
+        {
+          "label": "プラモデル・模型・組み立てキット",
+          "next": "toys_age_model"
+        },
+        {
+          "label": "スケートボード・三輪車・ペダルカー等（車輪付き玩具）",
+          "next": "toys_age_wheeled"
+        },
+        {
+          "label": "おもちゃの楽器・音の出るおもちゃ",
+          "next": "toys_age_musical"
+        },
+        {
+          "label": "ゴム製の空気入りボール・風船・パンチボール",
+          "next": "toys_age_ball"
+        },
+        {
+          "label": "ボードゲーム・カードゲーム（おもちゃ扱い）",
+          "next": "toys_boardgame"
+        }
+      ]
+    },
+    "toys_age_figure": {
+      "question": "対象年齢を選んでください。",
+      "answers": [
+        {
+          "label": "3歳未満（乳幼児向け）",
+          "leaf": "figure_u3"
+        },
+        {
+          "label": "3〜12歳向け",
+          "leaf": "figure_3to12"
+        },
+        {
+          "label": "13歳以上／コレクター向け",
+          "leaf": "figure_over12"
+        }
+      ]
+    },
+    "toys_age_plush": {
+      "question": "対象年齢を選んでください。",
+      "answers": [
+        {
+          "label": "3歳未満（乳幼児向け）",
+          "leaf": "plush_u3"
+        },
+        {
+          "label": "3〜12歳向け",
+          "leaf": "plush_3to12"
+        },
+        {
+          "label": "13歳以上／コレクター向け",
+          "leaf": "plush_over12"
+        }
+      ]
+    },
+    "toys_age_model": {
+      "question": "対象年齢を選んでください。",
+      "answers": [
+        {
+          "label": "3歳未満（乳幼児向け）",
+          "leaf": "model_u3"
+        },
+        {
+          "label": "3〜12歳向け",
+          "leaf": "model_3to12"
+        },
+        {
+          "label": "13歳以上／コレクター向け",
+          "leaf": "model_over12"
+        }
+      ]
+    },
+    "toys_age_wheeled": {
+      "question": "対象年齢を選んでください。",
+      "answers": [
+        {
+          "label": "3歳未満（乳幼児向け）",
+          "leaf": "wheeled_u3"
+        },
+        {
+          "label": "3〜12歳向け",
+          "leaf": "wheeled_3to12"
+        },
+        {
+          "label": "13歳以上／コレクター向け",
+          "leaf": "wheeled_over12"
+        }
+      ]
+    },
+    "toys_age_musical": {
+      "question": "対象年齢を選んでください。",
+      "answers": [
+        {
+          "label": "3歳未満（乳幼児向け）",
+          "leaf": "musical_u3"
+        },
+        {
+          "label": "3〜12歳向け",
+          "leaf": "musical_3to12"
+        },
+        {
+          "label": "13歳以上／コレクター向け",
+          "leaf": "musical_over12"
+        }
+      ]
+    },
+    "toys_age_ball": {
+      "question": "対象年齢を選んでください。",
+      "answers": [
+        {
+          "label": "3歳未満（乳幼児向け）",
+          "leaf": "ball_u3"
+        },
+        {
+          "label": "3〜12歳向け",
+          "leaf": "ball_3to12"
+        },
+        {
+          "label": "13歳以上／コレクター向け",
+          "leaf": "ball_over12"
+        }
+      ]
+    },
+    "toys_boardgame": {
+      "question": "ゲームの形式を確認します。電子部品はありますか？",
+      "answers": [
+        {
+          "label": "なし（ボードゲーム・カード・サイコロのみ）",
+          "leaf": "9504909080"
+        },
+        {
+          "label": "電池やモーターを使う電子おもちゃ",
+          "leaf": "9503000090"
+        }
+      ]
+    },
+    "cards_1": {
+      "question": "カードの種類を選んでください。",
+      "answers": [
+        {
+          "label": "トレーディングカード（ポケモン・遊戯王・MTG等）コレクター品",
+          "next": "cards_tcg"
+        },
+        {
+          "label": "プレイングカード（トランプ・ポーカー等、ゲーム用）",
+          "leaf": "9504400000"
+        },
+        {
+          "label": "その他の印刷物・絵カード",
+          "next": "cards_other"
+        }
+      ]
+    },
+    "cards_tcg": {
+      "question": "カードの状態・用途を確認します。",
+      "answers": [
+        {
+          "label": "主にコレクション目的（収集品・美術品的価値）",
+          "leaf": "4911998000"
+        },
+        {
+          "label": "ゲームプレイ目的（デッキ用等）",
+          "leaf": "4911998000"
+        }
+      ]
+    },
+    "cards_other": {
+      "question": "印刷物の種類を確認します。",
+      "answers": [
+        {
+          "label": "ポスター・アート印刷物",
+          "leaf": "4911912040"
+        },
+        {
+          "label": "ステッカー・シール",
+          "leaf": "4911998000"
+        },
+        {
+          "label": "その他の印刷カード",
+          "leaf": "4911998000"
+        }
+      ]
+    },
+    "games_1": {
+      "question": "商品の種類を選んでください。",
+      "answers": [
+        {
+          "label": "据え置き型ゲーム機本体（PS5・Switch等）",
+          "leaf": "9504500000"
+        },
+        {
+          "label": "携帯型ゲーム機本体",
+          "leaf": "9504500000"
+        },
+        {
+          "label": "ゲームソフト（ディスク・カートリッジ）",
+          "next": "games_software"
+        },
+        {
+          "label": "コントローラー・ゲーム周辺機器",
+          "next": "games_accessor"
+        },
+        {
+          "label": "アーケードゲーム機（コイン投入式）",
+          "leaf": "9504300010"
+        }
+      ]
+    },
+    "games_software": {
+      "question": "メディアの種類を選んでください。",
+      "answers": [
+        {
+          "label": "光ディスク（CD・DVD・Blu-ray等）",
+          "leaf": "8523494000"
+        },
+        {
+          "label": "ゲームカートリッジ（ROM）",
+          "leaf": "8523510000"
+        },
+        {
+          "label": "デジタルコード・ダウンロード版（物品なし）",
+          "leaf": "8523494000"
+        }
+      ]
+    },
+    "games_accessor": {
+      "question": "周辺機器の種類を確認します。",
+      "answers": [
+        {
+          "label": "コントローラー・ゲームパッド",
+          "leaf": "9504909080"
+        },
+        {
+          "label": "ゲーム機用充電ケーブル・電源アダプター",
+          "leaf": "8544422000"
+        },
+        {
+          "label": "ヘッドセット・イヤホン（ゲーム用）",
+          "leaf": "8518300000"
+        },
+        {
+          "label": "その他の周辺機器（冷却台・スタンド等）",
+          "leaf": "9504909080"
+        }
+      ]
+    },
+    "apparel_1": {
+      "question": "生地・編み方を選んでください。",
+      "answers": [
+        {
+          "label": "ニット・フリース・スウェット（編み地）",
+          "next": "apparel_knit_1"
+        },
+        {
+          "label": "織物（デニム・チノ・シャツ地等）",
+          "next": "apparel_woven_1"
+        }
+      ]
+    },
+    "apparel_knit_1": {
+      "question": "アイテムの種類を選んでください。",
+      "answers": [
+        {
+          "label": "Tシャツ・タンクトップ",
+          "next": "apparel_knit_tshirt"
+        },
+        {
+          "label": "セーター・プルオーバー・フーディ",
+          "next": "apparel_knit_sweater"
+        },
+        {
+          "label": "ズボン・スウェットパンツ",
+          "next": "apparel_knit_trousers"
+        },
+        {
+          "label": "ドレス・スカート",
+          "next": "apparel_knit_dress"
+        }
+      ]
+    },
+    "apparel_knit_tshirt": {
+      "question": "素材を選んでください。",
+      "answers": [
+        {
+          "label": "綿（コットン）",
+          "next": "apparel_knit_ts_cotton"
+        },
+        {
+          "label": "化学繊維（ポリエステル等）",
+          "next": "apparel_knit_ts_mmf"
+        },
+        {
+          "label": "その他（麻・シルク等）",
+          "leaf": "6109908030"
+        }
+      ]
+    },
+    "apparel_knit_ts_cotton": {
+      "question": "着用者を選んでください。",
+      "answers": [
+        {
+          "label": "男性用",
+          "leaf": "6109100012"
+        },
+        {
+          "label": "女性用",
+          "leaf": "6109100014"
+        },
+        {
+          "label": "性別不問・ユニセックス",
+          "leaf": "6109100012"
+        }
+      ]
+    },
+    "apparel_knit_ts_mmf": {
+      "question": "着用者を選んでください。",
+      "answers": [
+        {
+          "label": "男性用",
+          "leaf": "6109900541"
+        },
+        {
+          "label": "女性用",
+          "leaf": "6109900561"
+        },
+        {
+          "label": "その他",
+          "leaf": "6109900541"
+        }
+      ]
+    },
+    "apparel_knit_sweater": {
+      "question": "素材を選んでください。",
+      "answers": [
+        {
+          "label": "綿（コットン）",
+          "leaf": "6110200020"
+        },
+        {
+          "label": "ウール・カシミヤ",
+          "leaf": "6110110020"
+        },
+        {
+          "label": "化学繊維",
+          "leaf": "6110300015"
+        },
+        {
+          "label": "その他",
+          "leaf": "6110909000"
+        }
+      ]
+    },
+    "apparel_knit_trousers": {
+      "question": "素材を選んでください。",
+      "answers": [
+        {
+          "label": "綿（コットン）",
+          "leaf": "6103421020"
+        },
+        {
+          "label": "化学繊維",
+          "leaf": "6103431520"
+        },
+        {
+          "label": "その他",
+          "leaf": "6103498024"
+        }
+      ]
+    },
+    "apparel_knit_dress": {
+      "question": "素材を選んでください。",
+      "answers": [
+        {
+          "label": "綿（コットン）",
+          "leaf": "6104420000"
+        },
+        {
+          "label": "化学繊維",
+          "leaf": "6104432010"
+        },
+        {
+          "label": "その他",
+          "leaf": "6104499060"
+        }
+      ]
+    },
+    "apparel_woven_1": {
+      "question": "アイテムの種類を選んでください。",
+      "answers": [
+        {
+          "label": "シャツ・ブラウス",
+          "next": "apparel_woven_shirt"
+        },
+        {
+          "label": "ズボン・デニム・チノ",
+          "next": "apparel_woven_trousers"
+        },
+        {
+          "label": "ジャケット・コート・ブレザー",
+          "next": "apparel_woven_jacket"
+        },
+        {
+          "label": "ドレス・スカート",
+          "next": "apparel_woven_dress"
+        }
+      ]
+    },
+    "apparel_woven_shirt": {
+      "question": "素材を選んでください。",
+      "answers": [
+        {
+          "label": "綿（コットン）",
+          "next": "apparel_woven_shirt_cotton"
+        },
+        {
+          "label": "化学繊維",
+          "leaf": "6205202016"
+        },
+        {
+          "label": "その他",
+          "leaf": "6205900710"
+        }
+      ]
+    },
+    "apparel_woven_shirt_cotton": {
+      "question": "着用者を選んでください。",
+      "answers": [
+        {
+          "label": "男性用",
+          "leaf": "6205202016"
+        },
+        {
+          "label": "女性用",
+          "leaf": "6206303011"
+        }
+      ]
+    },
+    "apparel_woven_trousers": {
+      "question": "素材を選んでください。",
+      "answers": [
+        {
+          "label": "綿（コットン・デニム含む）",
+          "next": "apparel_woven_tr_cotton"
+        },
+        {
+          "label": "化学繊維",
+          "leaf": "6203431310"
+        },
+        {
+          "label": "その他",
+          "leaf": "6203490515"
+        }
+      ]
+    },
+    "apparel_woven_tr_cotton": {
+      "question": "着用者を選んでください。",
+      "answers": [
+        {
+          "label": "男性用",
+          "leaf": "6203420711"
+        },
+        {
+          "label": "女性用",
+          "leaf": "6204621511"
+        }
+      ]
+    },
+    "apparel_woven_jacket": {
+      "question": "素材を選んでください。",
+      "answers": [
+        {
+          "label": "綿（コットン）",
+          "leaf": "6201120010"
+        },
+        {
+          "label": "化学繊維",
+          "leaf": "6201130010"
+        },
+        {
+          "label": "ウール",
+          "leaf": "6201110000"
+        },
+        {
+          "label": "その他",
+          "leaf": "6201190000"
+        }
+      ]
+    },
+    "apparel_woven_dress": {
+      "question": "素材を選んでください。",
+      "answers": [
+        {
+          "label": "綿（コットン）",
+          "leaf": "6204410000"
+        },
+        {
+          "label": "化学繊維",
+          "leaf": "6204430000"
+        },
+        {
+          "label": "その他",
+          "leaf": "6204490000"
+        }
+      ]
+    },
+    "footwear_1": {
+      "question": "靴のアッパー（甲の素材）を選んでください。",
+      "answers": [
+        {
+          "label": "革（本革・レザー）",
+          "next": "footwear_leather_1"
+        },
+        {
+          "label": "ゴム・プラスチック（完全防水含む）",
+          "next": "footwear_rubber_1"
+        },
+        {
+          "label": "布・テキスタイル（スニーカー等）",
+          "next": "footwear_textile_1"
+        }
+      ]
+    },
+    "footwear_leather_1": {
+      "question": "靴の種類を選んでください。",
+      "answers": [
+        {
+          "label": "アンクル丈以上（ブーツ）",
+          "next": "footwear_leather_ankle"
+        },
+        {
+          "label": "アンクル丈以下（オックスフォード・パンプス等）",
+          "next": "footwear_leather_low"
+        }
+      ]
+    },
+    "footwear_leather_ankle": {
+      "question": "着用者を選んでください。",
+      "answers": [
+        {
+          "label": "男性用",
+          "leaf": "6403911060"
+        },
+        {
+          "label": "女性用",
+          "leaf": "6403919090"
+        },
+        {
+          "label": "その他（子供・ユニセックス）",
+          "leaf": "6403919090"
+        }
+      ]
+    },
+    "footwear_leather_low": {
+      "question": "着用者を選んでください。",
+      "answers": [
+        {
+          "label": "男性用",
+          "leaf": "6403599060"
+        },
+        {
+          "label": "女性用",
+          "leaf": "6403599090"
+        },
+        {
+          "label": "その他（子供等）",
+          "leaf": "6403599090"
+        }
+      ]
+    },
+    "footwear_rubber_1": {
+      "question": "靴の種類を選んでください。",
+      "answers": [
+        {
+          "label": "完全防水ブーツ",
+          "leaf": "6401929060"
+        },
+        {
+          "label": "アンクル丈以上",
+          "leaf": "6402919090"
+        },
+        {
+          "label": "アンクル丈以下（サンダル・スリッパ含む）",
+          "next": "footwear_rubber_low"
+        }
+      ]
+    },
+    "footwear_rubber_low": {
+      "question": "価格帯（輸入申告価格）を選んでください。",
+      "answers": [
+        {
+          "label": "$12以下/ペア",
+          "leaf": "6402999021"
+        },
+        {
+          "label": "$12超/ペア",
+          "leaf": "6402999021"
+        }
+      ]
+    },
+    "footwear_textile_1": {
+      "question": "アウターソール（底の素材）を選んでください。",
+      "answers": [
+        {
+          "label": "ゴム・プラスチック（スニーカー等）",
+          "next": "footwear_textile_rubber"
+        },
+        {
+          "label": "革・その他",
+          "next": "footwear_textile_leather_sole"
+        }
+      ]
+    },
+    "footwear_textile_rubber": {
+      "question": "価格帯を選んでください。",
+      "answers": [
+        {
+          "label": "$3以下/ペア",
+          "leaf": "6404119090"
+        },
+        {
+          "label": "$3〜$6.50/ペア",
+          "leaf": "6404119090"
+        },
+        {
+          "label": "$6.50〜$12/ペア",
+          "leaf": "6404119090"
+        },
+        {
+          "label": "$12超/ペア",
+          "leaf": "6404119090"
+        }
+      ]
+    },
+    "footwear_textile_leather_sole": {
+      "question": "着用者を選んでください。",
+      "answers": [
+        {
+          "label": "男性用",
+          "leaf": "6404201030"
+        },
+        {
+          "label": "女性用",
+          "leaf": "6404201060"
+        },
+        {
+          "label": "その他",
+          "leaf": "6404201090"
+        }
+      ]
+    },
+    "bags_1": {
+      "question": "商品の種類を選んでください。",
+      "answers": [
+        {
+          "label": "スーツケース・トランク・旅行かばん",
+          "next": "bags_luggage"
+        },
+        {
+          "label": "ハンドバッグ・ショルダーバッグ",
+          "next": "bags_handbag"
+        },
+        {
+          "label": "財布・カードケース・名刺入れ",
+          "next": "bags_wallet"
+        },
+        {
+          "label": "リュックサック・バックパック",
+          "next": "bags_backpack"
+        },
+        {
+          "label": "ショッピングバッグ・エコバッグ",
+          "next": "bags_shopping"
+        }
+      ]
+    },
+    "bags_luggage": {
+      "question": "外装素材を選んでください。",
+      "answers": [
+        {
+          "label": "革（本革）",
+          "leaf": "4202110030"
+        },
+        {
+          "label": "ハードシェル（プラスチック・ポリカ）",
+          "leaf": "4202122150"
+        },
+        {
+          "label": "布・ナイロン・ポリエステル",
+          "leaf": "4202128170"
+        },
+        {
+          "label": "その他",
+          "leaf": "4202190000"
+        }
+      ]
+    },
+    "bags_handbag": {
+      "question": "外装素材を選んでください。",
+      "answers": [
+        {
+          "label": "革（本革）",
+          "leaf": "4202210090"
+        },
+        {
+          "label": "合成皮革・プラスチック素材",
+          "leaf": "4202221500"
+        },
+        {
+          "label": "綿・帆布",
+          "leaf": "4202224000"
+        },
+        {
+          "label": "ナイロン・ポリエステル等化繊",
+          "leaf": "4202228100"
+        },
+        {
+          "label": "その他",
+          "leaf": "4202291000"
+        }
+      ]
+    },
+    "bags_wallet": {
+      "question": "外装素材を選んでください。",
+      "answers": [
+        {
+          "label": "革（本革）",
+          "leaf": "4202310060"
+        },
+        {
+          "label": "合成皮革・プラスチック",
+          "leaf": "4202322000"
+        },
+        {
+          "label": "布・ナイロン等",
+          "leaf": "4202328000"
+        },
+        {
+          "label": "その他",
+          "leaf": "4202391000"
+        }
+      ]
+    },
+    "bags_backpack": {
+      "question": "外装素材を選んでください。",
+      "answers": [
+        {
+          "label": "革（本革）",
+          "leaf": "4202910090"
+        },
+        {
+          "label": "プラスチック素材",
+          "leaf": "4202920810"
+        },
+        {
+          "label": "綿・帆布",
+          "leaf": "4202920810"
+        },
+        {
+          "label": "ナイロン・ポリエステル等",
+          "leaf": "4202923120"
+        },
+        {
+          "label": "その他",
+          "leaf": "4202924500"
+        }
+      ]
+    },
+    "bags_shopping": {
+      "question": "外装素材を選んでください。",
+      "answers": [
+        {
+          "label": "プラスチック素材",
+          "leaf": "4202920810"
+        },
+        {
+          "label": "布・コットン",
+          "leaf": "4202920810"
+        },
+        {
+          "label": "不織布・その他",
+          "leaf": "4202924500"
+        }
+      ]
+    },
+    "watches_1": {
+      "question": "ムーブメント（機構）を選んでください。",
+      "answers": [
+        {
+          "label": "クオーツ（電池式・ソーラー含む）",
+          "next": "watches_quartz"
+        },
+        {
+          "label": "機械式（自動巻き・手巻き）",
+          "next": "watches_mech"
+        }
+      ]
+    },
+    "watches_quartz": {
+      "question": "ケース素材を選んでください。",
+      "answers": [
+        {
+          "label": "貴金属（金・プラチナ・シルバー）製ケース",
+          "next": "watches_q_precious"
+        },
+        {
+          "label": "貴金属メッキ・一般素材（SS・チタン等）",
+          "next": "watches_q_base"
+        }
+      ]
+    },
+    "watches_q_precious": {
+      "question": "表示タイプを選んでください。",
+      "answers": [
+        {
+          "label": "アナログ（針式）",
+          "next": "watches_q_prec_analog"
+        },
+        {
+          "label": "デジタル（液晶表示のみ）",
+          "leaf": "9101192040"
+        }
+      ]
+    },
+    "watches_q_prec_analog": {
+      "question": "石数（ジュエル数）を選んでください。",
+      "answers": [
+        {
+          "label": "0〜1石",
+          "leaf": "9101114000"
+        },
+        {
+          "label": "2石以上",
+          "leaf": "9101118000"
+        }
+      ]
+    },
+    "watches_q_base": {
+      "question": "表示タイプを選んでください。",
+      "answers": [
+        {
+          "label": "アナログ（針式）",
+          "next": "watches_q_base_analog"
+        },
+        {
+          "label": "デジタル（液晶表示のみ）",
+          "leaf": "9102912000"
+        }
+      ]
+    },
+    "watches_q_base_analog": {
+      "question": "石数（ジュエル数）を選んでください。",
+      "answers": [
+        {
+          "label": "0〜1石",
+          "leaf": "9102111000"
+        },
+        {
+          "label": "2〜7石",
+          "leaf": "9102113000"
+        },
+        {
+          "label": "8石以上",
+          "leaf": "9102115000"
+        }
+      ]
+    },
+    "watches_mech": {
+      "question": "ケース素材を選んでください。",
+      "answers": [
+        {
+          "label": "貴金属（金・プラチナ・シルバー）製ケース",
+          "next": "watches_m_precious"
+        },
+        {
+          "label": "貴金属メッキ・一般素材（SS・チタン等）",
+          "next": "watches_m_base"
+        }
+      ]
+    },
+    "watches_m_precious": {
+      "question": "ストラップ／バンド素材を選んでください。",
+      "answers": [
+        {
+          "label": "金属ブレスレット（SS・金属チェーン等）",
+          "leaf": "9101218000"
+        },
+        {
+          "label": "革・布・その他",
+          "leaf": "9101211000"
+        }
+      ]
+    },
+    "watches_m_base": {
+      "question": "石数（ジュエル数）を選んでください。",
+      "answers": [
+        {
+          "label": "0〜1石（ジュエルなし）",
+          "leaf": "9102211000"
+        },
+        {
+          "label": "2〜7石",
+          "leaf": "9102213000"
+        },
+        {
+          "label": "8〜17石",
+          "leaf": "9102217000"
+        },
+        {
+          "label": "18石以上",
+          "leaf": "9102219000"
+        }
+      ]
+    },
+    "jewelry_1": {
+      "question": "商品の種類を選んでください。",
+      "answers": [
+        {
+          "label": "本物のジュエリー（金・銀・プラチナ使用）",
+          "next": "jewelry_real"
+        },
+        {
+          "label": "イミテーションジュエリー（コスチューム）",
+          "next": "jewelry_imitation"
+        }
+      ]
+    },
+    "jewelry_real": {
+      "question": "主な金属を選んでください。",
+      "answers": [
+        {
+          "label": "シルバー（銀）925等",
+          "next": "jewelry_silver"
+        },
+        {
+          "label": "ゴールド（金）14K・18K等",
+          "next": "jewelry_gold"
+        },
+        {
+          "label": "プラチナ（白金）",
+          "leaf": "7113200050"
+        }
+      ]
+    },
+    "jewelry_silver": {
+      "question": "アイテムを選んでください。",
+      "answers": [
+        {
+          "label": "ネックレス・チェーン",
+          "leaf": "7113111000"
+        },
+        {
+          "label": "リング・指輪",
+          "leaf": "7113111000"
+        },
+        {
+          "label": "イヤリング・ピアス",
+          "leaf": "7113111000"
+        },
+        {
+          "label": "ブレスレット・バングル",
+          "leaf": "7113111000"
+        },
+        {
+          "label": "その他",
+          "leaf": "7113111000"
+        }
+      ]
+    },
+    "jewelry_gold": {
+      "question": "アイテムを選んでください。",
+      "answers": [
+        {
+          "label": "ネックレス・チェーン",
+          "leaf": "7113195021"
+        },
+        {
+          "label": "リング・指輪",
+          "leaf": "7113195025"
+        },
+        {
+          "label": "イヤリング・ピアス",
+          "leaf": "7113195030"
+        },
+        {
+          "label": "ブレスレット・バングル",
+          "leaf": "7113195045"
+        },
+        {
+          "label": "その他",
+          "leaf": "7113195095"
+        }
+      ]
+    },
+    "jewelry_imitation": {
+      "question": "素材を選んでください。",
+      "answers": [
+        {
+          "label": "プラスチック製",
+          "leaf": "7117907500"
+        },
+        {
+          "label": "ベースメタル（真鍮・亜鉛合金等）",
+          "next": "jewelry_imitation_base"
+        },
+        {
+          "label": "その他（ガラス・石等）",
+          "leaf": "7117909000"
+        }
+      ]
+    },
+    "jewelry_imitation_base": {
+      "question": "カフスリンク・スタッドですか？",
+      "answers": [
+        {
+          "label": "はい（カフスリンク・スタッド）",
+          "leaf": "7117110000"
+        },
+        {
+          "label": "いいえ（その他）",
+          "leaf": "7117190090"
+        }
+      ]
+    },
+    "books_1": {
+      "question": "商品の種類を選んでください。",
+      "answers": [
+        {
+          "label": "書籍（本・辞書・百科事典）",
+          "next": "books_book"
+        },
+        {
+          "label": "ポスター・アート印刷物",
+          "next": "books_poster"
+        },
+        {
+          "label": "トレーディングカード以外の印刷カード・グリーティングカード",
+          "leaf": "4911998000"
+        },
+        {
+          "label": "カタログ・広告印刷物",
+          "leaf": "4911100080"
+        }
+      ]
+    },
+    "books_book": {
+      "question": "書籍の種類を選んでください。",
+      "answers": [
+        {
+          "label": "一般書籍・小説・文庫（単一冊）",
+          "leaf": "4901990093"
+        },
+        {
+          "label": "辞書・百科事典",
+          "leaf": "4901910040"
+        },
+        {
+          "label": "技術書・専門書・教科書",
+          "leaf": "4901990050"
+        },
+        {
+          "label": "漫画（コミックブック）",
+          "leaf": "4901990093"
+        }
+      ]
+    },
+    "books_poster": {
+      "question": "ポスターの厚さを確認します。",
+      "answers": [
+        {
+          "label": "薄手（0.51mm以下の紙）",
+          "leaf": "4911912020"
+        },
+        {
+          "label": "厚手（0.51mm超）",
+          "leaf": "4911913000"
+        }
+      ]
+    },
+    "ceramics_1": {
+      "question": "用途を選んでください。",
+      "answers": [
+        {
+          "label": "食器・カップ・ボウル（一般家庭用）",
+          "leaf": "6912004810"
+        },
+        {
+          "label": "ホテル・レストラン向け業務用食器",
+          "leaf": "6912002000"
+        },
+        {
+          "label": "置物・フィギュア・インテリア陶磁器",
+          "next": "ceramics_figurine"
+        },
+        {
+          "label": "タイル・建築用セラミック",
+          "leaf": "6907100010"
+        }
+      ]
+    },
+    "ceramics_figurine": {
+      "question": "素材を確認します。",
+      "answers": [
+        {
+          "label": "磁器（ポーセレン・ファインチャイナ）",
+          "leaf": "6913100000"
+        },
+        {
+          "label": "陶器・その他セラミック",
+          "leaf": "6913900000"
+        }
+      ]
+    },
+    "electronics_1": {
+      "question": "商品の種類を選んでください。",
+      "answers": [
+        {
+          "label": "スマートフォン・携帯電話",
+          "leaf": "8517130000"
+        },
+        {
+          "label": "タブレット・iPad等",
+          "leaf": "8471300000"
+        },
+        {
+          "label": "ノートPC・ラップトップ",
+          "leaf": "8471410000"
+        },
+        {
+          "label": "イヤホン・ヘッドフォン",
+          "next": "electronics_headphone"
+        },
+        {
+          "label": "スピーカー（ポータブル含む）",
+          "leaf": "8518220000"
+        },
+        {
+          "label": "カメラ・デジカメ",
+          "leaf": "8525800500"
+        },
+        {
+          "label": "充電器・電源アダプター",
+          "leaf": "8504404500"
+        },
+        {
+          "label": "プリンター",
+          "leaf": "8443323000"
+        },
+        {
+          "label": "その他家電・電子部品",
+          "next": "electronics_other"
+        }
+      ]
+    },
+    "electronics_headphone": {
+      "question": "接続方式を選んでください。",
+      "answers": [
+        {
+          "label": "有線（3.5mmジャック・USB等）",
+          "leaf": "8518300000"
+        },
+        {
+          "label": "Bluetooth・無線",
+          "leaf": "8518300000"
+        }
+      ]
+    },
+    "electronics_other": {
+      "question": "大まかな機能を選んでください。",
+      "answers": [
+        {
+          "label": "映像出力・モニター・ディスプレイ",
+          "leaf": "8528592000"
+        },
+        {
+          "label": "通信機器（ルーター・モデム等）",
+          "leaf": "8517690000"
+        },
+        {
+          "label": "バッテリー・蓄電池",
+          "leaf": "8507600090"
+        },
+        {
+          "label": "電子部品・基板・IC",
+          "leaf": "8542310050"
+        },
+        {
+          "label": "その他",
+          "leaf": "8543709650"
+        }
+      ]
+    },
+    "plastics_1": {
+      "question": "プラスチック製品の種類を選んでください。",
+      "answers": [
+        {
+          "label": "食品用容器・タッパー・ボトル",
+          "next": "plastics_container"
+        },
+        {
+          "label": "家庭用品・収納・インテリア小物",
+          "leaf": "3924100000"
+        },
+        {
+          "label": "ケース・カバー（スマホケース等）",
+          "leaf": "3926909989"
+        },
+        {
+          "label": "プラスチック製フィギュア・おもちゃ",
+          "leaf": "9503000090"
+        },
+        {
+          "label": "その他プラスチック製品",
+          "leaf": "3926909989"
+        }
+      ]
+    },
+    "plastics_container": {
+      "question": "用途を確認します。",
+      "answers": [
+        {
+          "label": "食品・飲料の直接接触容器（食品グレード）",
+          "leaf": "3924100000"
+        },
+        {
+          "label": "非食品用容器・収納ボックス",
+          "leaf": "3924900000"
+        }
+      ]
+    }
+  },
+  "leaves": {
+    "figure_u3": {
+      "htsus": "9503.00.00.71",
+      "hs6": "950300",
+      "desc": "Children's product (CPSIA) — other children's toy (not inflatable rubber ball) — for use by persons under 3 years of age",
+      "duty": "Free",
+      "title_template": "{brand} Toy Figure / Doll (for age 3 and under)"
+    },
+    "figure_3to12": {
+      "htsus": "9503.00.00.73",
+      "hs6": "950300",
+      "desc": "Children's product (CPSIA) — other children's toy (not inflatable rubber ball) — for use by persons 3 to 12 years of age",
+      "duty": "Free",
+      "title_template": "{brand} Toy Figure / Doll (for age 3-12)"
+    },
+    "figure_over12": {
+      "htsus": "9503.00.00.90",
+      "hs6": "950300",
+      "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
+      "duty": "Free",
+      "title_template": "{brand} Collectible Figure / Doll (age 13+)"
+    },
+    "plush_u3": {
+      "htsus": "9503.00.00.71",
+      "hs6": "950300",
+      "desc": "Children's product (CPSIA) — other children's toy (not inflatable rubber ball) — for use by persons under 3 years of age",
+      "duty": "Free",
+      "title_template": "{brand} Stuffed Toy / Plush (for age 3 and under)"
+    },
+    "plush_3to12": {
+      "htsus": "9503.00.00.73",
+      "hs6": "950300",
+      "desc": "Children's product (CPSIA) — other children's toy (not inflatable rubber ball) — for use by persons 3 to 12 years of age",
+      "duty": "Free",
+      "title_template": "{brand} Stuffed Toy / Plush (for age 3-12)"
+    },
+    "plush_over12": {
+      "htsus": "9503.00.00.90",
+      "hs6": "950300",
+      "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
+      "duty": "Free",
+      "title_template": "{brand} Collectible Stuffed Toy / Plush (age 13+)"
+    },
+    "model_u3": {
+      "htsus": "9503.00.00.71",
+      "hs6": "950300",
+      "desc": "Children's product (CPSIA) — other children's toy (not inflatable rubber ball) — for use by persons under 3 years of age",
+      "duty": "Free",
+      "title_template": "{brand} Scale Model / Model Kit (for age 3 and under)"
+    },
+    "model_3to12": {
+      "htsus": "9503.00.00.73",
+      "hs6": "950300",
+      "desc": "Children's product (CPSIA) — other children's toy (not inflatable rubber ball) — for use by persons 3 to 12 years of age",
+      "duty": "Free",
+      "title_template": "{brand} Scale Model / Model Kit (for age 3-12)"
+    },
+    "model_over12": {
+      "htsus": "9503.00.00.90",
+      "hs6": "950300",
+      "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
+      "duty": "Free",
+      "title_template": "{brand} Scale Model / Model Kit (age 13+)"
+    },
+    "wheeled_u3": {
+      "htsus": "9503.00.00.71",
+      "hs6": "950300",
+      "desc": "Children's product (CPSIA) — other children's toy (not inflatable rubber ball) — for use by persons under 3 years of age",
+      "duty": "Free",
+      "title_template": "{brand} Wheeled Toy (for age 3 and under)"
+    },
+    "wheeled_3to12": {
+      "htsus": "9503.00.00.73",
+      "hs6": "950300",
+      "desc": "Children's product (CPSIA) — other children's toy (not inflatable rubber ball) — for use by persons 3 to 12 years of age",
+      "duty": "Free",
+      "title_template": "{brand} Wheeled Toy (for age 3-12)"
+    },
+    "wheeled_over12": {
+      "htsus": "9503.00.00.90",
+      "hs6": "950300",
+      "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
+      "duty": "Free",
+      "title_template": "{brand} Wheeled Toy (age 13+)"
+    },
+    "musical_u3": {
+      "htsus": "9503.00.00.71",
+      "hs6": "950300",
+      "desc": "Children's product (CPSIA) — other children's toy (not inflatable rubber ball) — for use by persons under 3 years of age",
+      "duty": "Free",
+      "title_template": "{brand} Toy Musical Instrument (for age 3 and under)"
+    },
+    "musical_3to12": {
+      "htsus": "9503.00.00.73",
+      "hs6": "950300",
+      "desc": "Children's product (CPSIA) — other children's toy (not inflatable rubber ball) — for use by persons 3 to 12 years of age",
+      "duty": "Free",
+      "title_template": "{brand} Toy Musical Instrument (for age 3-12)"
+    },
+    "musical_over12": {
+      "htsus": "9503.00.00.90",
+      "hs6": "950300",
+      "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
+      "duty": "Free",
+      "title_template": "{brand} Toy Musical Instrument (age 13+)"
+    },
+    "ball_u3": {
+      "htsus": "9503.00.00.11",
+      "hs6": "950300",
+      "desc": "Children's product (CPSIA) — inflatable toy ball, balloon or punchball, of rubber — for use by persons under 3 years of age",
+      "duty": "Free",
+      "title_template": "{brand} Inflatable Toy Ball / Balloon (rubber, for age 3 and under)"
+    },
+    "ball_3to12": {
+      "htsus": "9503.00.00.13",
+      "hs6": "950300",
+      "desc": "Children's product (CPSIA) — inflatable toy ball, balloon or punchball, of rubber — for use by persons 3 to 12 years of age",
+      "duty": "Free",
+      "title_template": "{brand} Inflatable Toy Ball / Balloon (rubber, for age 3-12)"
+    },
+    "ball_over12": {
+      "htsus": "9503.00.00.90",
+      "hs6": "950300",
+      "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
+      "duty": "Free",
+      "title_template": "{brand} Inflatable Toy Ball / Balloon (rubber, age 13+)"
+    },
+    "9503000071": {
+      "htsus": "9503.00.00.71",
+      "hs6": "950300",
+      "desc": "Children's product (CPSIA) — other children's toy (not inflatable rubber ball) — for use by persons under 3 years of age",
+      "duty": "Free",
+      "title_template": "{brand} Toy / Figure / Doll (for age 3 and under)"
+    },
+    "9503000073": {
+      "htsus": "9503.00.00.73",
+      "hs6": "950300",
+      "desc": "Children's product (CPSIA) — other children's toy (not inflatable rubber ball) — for use by persons 3 to 12 years of age",
+      "duty": "Free",
+      "title_template": "{brand} Toy / Figure / Doll (for age 3-12)"
+    },
+    "9503000090": {
+      "htsus": "9503.00.00.90",
+      "hs6": "950300",
+      "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
+      "duty": "Free",
+      "title_template": "{brand} Toy / Figure / Collectible"
+    },
+    "9504400000": {
+      "htsus": "9504.40.00.00",
+      "hs6": "950440",
+      "desc": "Playing cards",
+      "duty": "Free",
+      "title_template": "{brand} Playing Cards"
+    },
+    "9504300010": {
+      "htsus": "9504.30.00.10",
+      "hs6": "950430",
+      "desc": "Other games, operated by coins — Video",
+      "duty": "Free",
+      "title_template": "{brand} Arcade Video Game Machine"
+    },
+    "9504500000": {
+      "htsus": "9504.50.00.00",
+      "hs6": "950450",
+      "desc": "Video game consoles and machines, other than those of subheading 9504.30",
+      "duty": "Free",
+      "title_template": "{brand} Video Game Console"
+    },
+    "9504909080": {
+      "htsus": "9504.90.90.80",
+      "hs6": "950490",
+      "desc": "Other game articles — Other",
+      "duty": "Free",
+      "title_template": "{brand} Game Accessory / Controller"
+    },
+    "4911998000": {
+      "htsus": "4911.99.80.00",
+      "hs6": "491199",
+      "desc": "Other printed matter — Other",
+      "duty": "Free",
+      "title_template": "{brand} Printed Collectible Card"
+    },
+    "4911912020": {
+      "htsus": "4911.91.20.20",
+      "hs6": "491191",
+      "desc": "Printed pictures, designs and photographs — Posters (not over 0.51 mm)",
+      "duty": "Free",
+      "title_template": "{brand} Poster / Printed Art"
+    },
+    "4911913000": {
+      "htsus": "4911.91.30.00",
+      "hs6": "491191",
+      "desc": "Printed pictures, designs and photographs — Over 0.51 mm in thickness",
+      "duty": "Free",
+      "title_template": "{brand} Poster / Printed Art"
+    },
+    "4911912040": {
+      "htsus": "4911.91.20.40",
+      "hs6": "491191",
+      "desc": "Printed pictures, designs and photographs — Other (not over 0.51 mm)",
+      "duty": "Free",
+      "title_template": "{brand} Printed Art"
+    },
+    "4911100080": {
+      "htsus": "4911.10.00.80",
+      "hs6": "491110",
+      "desc": "Trade advertising material, commercial catalogs — Other",
+      "duty": "Free",
+      "title_template": "Trade Catalog / Advertisement"
+    },
+    "8523494000": {
+      "htsus": "8523.49.40.00",
+      "hs6": "852349",
+      "desc": "Optical discs for reproducing representations of instructions, data, sound, and image",
+      "duty": "Free",
+      "title_template": "{brand} Video Game Software (Optical Disc)"
+    },
+    "8523510000": {
+      "htsus": "8523.51.00.00",
+      "hs6": "852351",
+      "desc": "Solid-state non-volatile storage devices",
+      "duty": "Free",
+      "title_template": "{brand} Video Game Software (ROM Cartridge)"
+    },
+    "8544422000": {
+      "htsus": "8544.42.20.00",
+      "hs6": "854442",
+      "desc": "Other electric conductors fitted with connectors, for a voltage not exceeding 80V",
+      "duty": "Free",
+      "title_template": "{brand} Electric Cable / Charging Cable"
+    },
+    "8518300000": {
+      "htsus": "8518.30.20.00",
+      "hs6": "851830",
+      "desc": "Headphones and earphones — Other",
+      "duty": "Free",
+      "title_template": "{brand} Headphones / Earphones"
+    },
+    "6109100012": {
+      "htsus": "6109.90.10.07",
+      "hs6": "610990",
+      "desc": "T-shirts and singlets of cotton, knitted — Men's",
+      "duty": "16.5%",
+      "title_template": "{brand} Cotton T-shirt"
+    },
+    "6109100014": {
+      "htsus": "6109.90.10.50",
+      "hs6": "610990",
+      "desc": "T-shirts and singlets of cotton, knitted — Women's",
+      "duty": "16.5%",
+      "title_template": "{brand} Cotton T-shirt, Women's"
+    },
+    "6109900541": {
+      "htsus": "6109.90.10.07",
+      "hs6": "610990",
+      "desc": "T-shirts, singlets — Men's",
+      "duty": "32%",
+      "title_template": "{brand} Synthetic T-shirt, Men's"
+    },
+    "6109900561": {
+      "htsus": "6109.90.10.50",
+      "hs6": "610990",
+      "desc": "T-shirts, singlets — Women's",
+      "duty": "32%",
+      "title_template": "{brand} Synthetic T-shirt, Women's"
+    },
+    "6109908030": {
+      "htsus": "6109.90.80.30",
+      "hs6": "610990",
+      "desc": "T-shirts and similar — Of other textile materials — Other",
+      "duty": "Free",
+      "title_template": "{brand} T-shirt / Top, Knitted"
+    },
+    "6110200020": {
+      "htsus": "6110.20.10.10",
+      "hs6": "611020",
+      "desc": "Jerseys, pullovers — of cotton, men's or boys'",
+      "duty": "16.5%",
+      "title_template": "{brand} Cotton Sweater / Pullover"
+    },
+    "6110110020": {
+      "htsus": "6110.11.00.15",
+      "hs6": "611011",
+      "desc": "Jerseys, pullovers — of wool, men's",
+      "duty": "16%",
+      "title_template": "{brand} Wool Sweater / Pullover"
+    },
+    "6110300015": {
+      "htsus": "6110.30.10.10",
+      "hs6": "611030",
+      "desc": "Jerseys, pullovers — of man-made fibers, men's or boys'",
+      "duty": "32%",
+      "title_template": "{brand} Synthetic Sweater / Hoodie"
+    },
+    "6110909000": {
+      "htsus": "6110.90.90.10",
+      "hs6": "611090",
+      "desc": "Jerseys, pullovers — of other textile materials",
+      "duty": "6%",
+      "title_template": "{brand} Sweater / Pullover"
+    },
+    "6103421020": {
+      "htsus": "6103.42.10.20",
+      "hs6": "610342",
+      "desc": "Men's or boys' knit trousers, breeches and shorts — of cotton — Men's",
+      "duty": "16.1%",
+      "title_template": "{brand} Men's Cotton Pants / Sweatpants"
+    },
+    "6103431520": {
+      "htsus": "6103.43.15.20",
+      "hs6": "610343",
+      "desc": "Men's or boys' knit trousers — of synthetic fibers — Men's",
+      "duty": "28.2%",
+      "title_template": "{brand} Men's Synthetic Pants"
+    },
+    "6103498024": {
+      "htsus": "6103.49.80.24",
+      "hs6": "610349",
+      "desc": "Men's or boys' knit trousers — of other textile materials — Trousers and breeches",
+      "duty": "5.6%",
+      "title_template": "{brand} Men's Pants, Knitted"
+    },
+    "6104420000": {
+      "htsus": "6104.42.00.10",
+      "hs6": "610442",
+      "desc": "Women's or girls' dresses — of cotton",
+      "duty": "11.5%",
+      "title_template": "{brand} Women's Cotton Dress"
+    },
+    "6104432010": {
+      "htsus": "6104.43.20.10",
+      "hs6": "610443",
+      "desc": "Women's or girls' knit dresses — of synthetic fibers — Women's",
+      "duty": "16%",
+      "title_template": "{brand} Women's Synthetic Dress"
+    },
+    "6104499060": {
+      "htsus": "6104.49.90.60",
+      "hs6": "610449",
+      "desc": "Women's or girls' knit dresses — of other textile materials — Other",
+      "duty": "5.6%",
+      "title_template": "{brand} Women's Dress, Knitted"
+    },
+    "6205202016": {
+      "htsus": "6205.20.20.16",
+      "hs6": "620520",
+      "desc": "Men's woven shirts — of cotton — Men's",
+      "duty": "19.7%",
+      "title_template": "{brand} Men's Cotton Shirt"
+    },
+    "6206303011": {
+      "htsus": "6206.30.30.11",
+      "hs6": "620630",
+      "desc": "Women's woven blouses, shirts — of cotton — Women's",
+      "duty": "15.4%",
+      "title_template": "{brand} Women's Cotton Blouse / Shirt"
+    },
+    "6205900710": {
+      "htsus": "6205.90.07.10",
+      "hs6": "620590",
+      "desc": "Men's woven shirts — of other textile materials — Men's",
+      "duty": "17.5%",
+      "title_template": "{brand} Men's Shirt"
+    },
+    "6203420711": {
+      "htsus": "6203.42.07.11",
+      "hs6": "620342",
+      "desc": "Men's or boys' woven trousers — of cotton — Blue denim",
+      "duty": "16.6%",
+      "title_template": "{brand} Men's Cotton Pants / Jeans"
+    },
+    "6203431310": {
+      "htsus": "6203.43.13.10",
+      "hs6": "620343",
+      "desc": "Men's or boys' woven trousers — of synthetic fibers — Men's",
+      "duty": "27.9%",
+      "title_template": "{brand} Men's Synthetic Trousers"
+    },
+    "6203490515": {
+      "htsus": "6203.49.05.15",
+      "hs6": "620349",
+      "desc": "Men's or boys' woven trousers — of other textile materials — Men's",
+      "duty": "27.9%",
+      "title_template": "{brand} Men's Trousers"
+    },
+    "6204621511": {
+      "htsus": "6204.62.15.11",
+      "hs6": "620462",
+      "desc": "Women's or girls' woven trousers — of cotton — Blue denim",
+      "duty": "16.6%",
+      "title_template": "{brand} Women's Cotton Pants / Jeans"
+    },
+    "6201120010": {
+      "htsus": "6201.20.11.10",
+      "hs6": "620120",
+      "desc": "Men's overcoats and similar — of cotton, woven",
+      "duty": "9.4%",
+      "title_template": "{brand} Men's Cotton Jacket / Coat"
+    },
+    "6201130010": {
+      "htsus": "6201.40.15.10",
+      "hs6": "620140",
+      "desc": "Men's overcoats and similar — of MMF, woven",
+      "duty": "27.7%",
+      "title_template": "{brand} Men's Synthetic Jacket / Coat"
+    },
+    "6201110000": {
+      "htsus": "6201.30.20.10",
+      "hs6": "620130",
+      "desc": "Men's overcoats and similar — of wool, woven",
+      "duty": "34%",
+      "title_template": "{brand} Men's Wool Jacket / Coat"
+    },
+    "6201190000": {
+      "htsus": "6201.90.29.60",
+      "hs6": "620190",
+      "desc": "Men's overcoats and similar — of other textile materials",
+      "duty": "Free",
+      "title_template": "{brand} Men's Jacket / Coat"
+    },
+    "6204410000": {
+      "htsus": "6204.41.10.00",
+      "hs6": "620441",
+      "desc": "Women's dresses of wool — containing 30%+ silk",
+      "duty": "7.2%",
+      "title_template": "{brand} Women's Wool Dress"
+    },
+    "6204430000": {
+      "htsus": "6204.43.10.00",
+      "hs6": "620443",
+      "desc": "Women's dresses of synthetic fibers — certified hand-loomed",
+      "duty": "11.3%",
+      "title_template": "{brand} Women's Synthetic Dress, Woven"
+    },
+    "6204490000": {
+      "htsus": "6204.49.10.00",
+      "hs6": "620449",
+      "desc": "Women's dresses of other textile materials",
+      "duty": "6.9%",
+      "title_template": "{brand} Women's Dress, Woven"
+    },
+    "6403911060": {
+      "htsus": "6403.91.60.40",
+      "hs6": "640391",
+      "desc": "Footwear with leather uppers, covering the ankle — For men, youths and boys",
+      "duty": "8.5%",
+      "title_template": "{brand} Men's Leather Boots"
+    },
+    "6403919090": {
+      "htsus": "6403.91.90.45",
+      "hs6": "640391",
+      "desc": "Footwear with leather uppers, covering the ankle — For other persons",
+      "duty": "10%",
+      "title_template": "{brand} Leather Boots"
+    },
+    "6403599060": {
+      "htsus": "6403.59.60.60",
+      "hs6": "640359",
+      "desc": "Footwear with leather uppers, not covering the ankle — For men, youths and boys",
+      "duty": "8.5%",
+      "title_template": "{brand} Men's Leather Shoes"
+    },
+    "6403599090": {
+      "htsus": "6403.59.90.45",
+      "hs6": "640359",
+      "desc": "Footwear with leather uppers, not covering the ankle — For other persons",
+      "duty": "10%",
+      "title_template": "{brand} Leather Shoes"
+    },
+    "6401929060": {
+      "htsus": "6401.92.90.60",
+      "hs6": "640192",
+      "desc": "Waterproof footwear, covering the ankle but not the knee — Other",
+      "duty": "37.5%",
+      "title_template": "{brand} Waterproof Rubber Boots"
+    },
+    "6402919090": {
+      "htsus": "6402.91.90.95",
+      "hs6": "640291",
+      "desc": "Footwear with rubber/plastic uppers, covering the ankle — Valued over $12/pair",
+      "duty": "20%",
+      "title_template": "{brand} Rubber/Plastic Ankle Boots"
+    },
+    "6402999021": {
+      "htsus": "6402.99.90.05",
+      "hs6": "640299",
+      "desc": "Footwear with rubber/plastic uppers, not covering the ankle — Other",
+      "duty": "20%",
+      "title_template": "{brand} Rubber/Plastic Shoes / Sneakers"
+    },
+    "6404119090": {
+      "htsus": "6404.11.90.80",
+      "hs6": "640411",
+      "desc": "Footwear with textile uppers, outer sole of rubber/plastic, athletic — Valued over $12/pair",
+      "duty": "20%",
+      "title_template": "{brand} Athletic Shoes / Sneakers"
+    },
+    "6404201030": {
+      "htsus": "6404.20.40.30",
+      "hs6": "640420",
+      "desc": "Footwear with textile uppers, outer sole of leather/composition — Valued over $2.50/pair, for men",
+      "duty": "10%",
+      "title_template": "{brand} Men's Textile Upper Shoes"
+    },
+    "6404201060": {
+      "htsus": "6404.20.40.60",
+      "hs6": "640420",
+      "desc": "Footwear with textile uppers, outer sole of leather/composition — For women",
+      "duty": "10%",
+      "title_template": "{brand} Women's Textile Upper Shoes"
+    },
+    "6404201090": {
+      "htsus": "6404.20.40.90",
+      "hs6": "640420",
+      "desc": "Footwear with textile uppers, outer sole of leather/composition — Other",
+      "duty": "10%",
+      "title_template": "{brand} Textile Upper Shoes"
+    },
+    "4202110030": {
+      "htsus": "4202.11.00.30",
+      "hs6": "420211",
+      "desc": "Trunks, suitcases, vanity cases — With outer surface of leather, attache/briefcases",
+      "duty": "8%",
+      "title_template": "{brand} Leather Suitcase / Luggage"
+    },
+    "4202122150": {
+      "htsus": "4202.12.21.50",
+      "hs6": "420212",
+      "desc": "Trunks, suitcases — With outer surface of plastics, Other",
+      "duty": "20%",
+      "title_template": "{brand} Hard Shell Suitcase / Luggage"
+    },
+    "4202128170": {
+      "htsus": "4202.12.81.70",
+      "hs6": "420212",
+      "desc": "Trunks, suitcases — Of man-made fibers (670)",
+      "duty": "17.6%",
+      "title_template": "{brand} Fabric Suitcase / Luggage"
+    },
+    "4202190000": {
+      "htsus": "4202.19.00.00",
+      "hs6": "420219",
+      "desc": "Trunks, suitcases and similar containers — Other",
+      "duty": "20%",
+      "title_template": "{brand} Suitcase / Luggage"
+    },
+    "4202210090": {
+      "htsus": "4202.21.90.00",
+      "hs6": "420221",
+      "desc": "Handbags of leather — Valued over $20 each",
+      "duty": "9%",
+      "title_template": "{brand} Leather Handbag"
+    },
+    "4202221500": {
+      "htsus": "4202.22.15.00",
+      "hs6": "420222",
+      "desc": "Handbags with outer surface of sheeting of plastics",
+      "duty": "16%",
+      "title_template": "{brand} Synthetic Leather Handbag"
+    },
+    "4202224000": {
+      "htsus": "4202.22.40.20",
+      "hs6": "420222",
+      "desc": "Handbags of cotton",
+      "duty": "7.4%",
+      "title_template": "{brand} Cotton Canvas Handbag"
+    },
+    "4202228100": {
+      "htsus": "4202.22.81.00",
+      "hs6": "420222",
+      "desc": "Handbags of man-made fibers (670)",
+      "duty": "17.6%",
+      "title_template": "{brand} Nylon/Polyester Handbag"
+    },
+    "4202291000": {
+      "htsus": "4202.29.10.00",
+      "hs6": "420229",
+      "desc": "Handbags of plastics",
+      "duty": "5.3%",
+      "title_template": "{brand} Plastic Handbag"
+    },
+    "4202310060": {
+      "htsus": "4202.31.60.00",
+      "hs6": "420231",
+      "desc": "Articles of a kind normally carried in the pocket or in the handbag, with leather outer surface — Other",
+      "duty": "8%",
+      "title_template": "{brand} Leather Wallet"
+    },
+    "4202322000": {
+      "htsus": "4202.32.20.00",
+      "hs6": "420232",
+      "desc": "Articles for pocket/handbag — Outer surface plastics",
+      "duty": "20%",
+      "title_template": "{brand} Synthetic Wallet"
+    },
+    "4202328000": {
+      "htsus": "4202.32.80.00",
+      "hs6": "420232",
+      "desc": "Articles for pocket/handbag — Of textile materials",
+      "duty": "5.7%",
+      "title_template": "{brand} Textile Wallet / Card Case"
+    },
+    "4202391000": {
+      "htsus": "4202.39.10.00",
+      "hs6": "420239",
+      "desc": "Articles for pocket/handbag — Of plastics",
+      "duty": "5.3%",
+      "title_template": "{brand} Plastic Wallet"
+    },
+    "4202910090": {
+      "htsus": "4202.91.90.90",
+      "hs6": "420291",
+      "desc": "Other travel/sports bags — Other",
+      "duty": "4.5%",
+      "title_template": "{brand} Leather Bag / Travel Bag"
+    },
+    "4202920810": {
+      "htsus": "4202.92.08.09",
+      "hs6": "420292",
+      "desc": "Other bags of textile — Other (870)",
+      "duty": "7%",
+      "title_template": "{brand} Fabric Bag / Tote Bag"
+    },
+    "4202923120": {
+      "htsus": "4202.92.31.20",
+      "hs6": "420292",
+      "desc": "Other bags of man-made fibers — Backpacks (670)",
+      "duty": "17.6%",
+      "title_template": "{brand} Nylon/Polyester Backpack"
+    },
+    "4202924500": {
+      "htsus": "4202.92.45.00",
+      "hs6": "420292",
+      "desc": "Other bags — Other",
+      "duty": "20%",
+      "title_template": "{brand} Backpack / Bag"
+    },
+    "9101114000": {
+      "htsus": "9101.11.40",
+      "hs6": "910111",
+      "desc": "Wrist watches, electrically operated, with case of precious metal — Quartz, having no jewels or only one jewel",
+      "duty": "51¢ each + 6.25% on case + 5.3% on battery",
+      "title_template": "{brand} Quartz Wristwatch, Precious Metal Case, {strap_material} Strap"
+    },
+    "9101118000": {
+      "htsus": "9101.11.80",
+      "hs6": "910111",
+      "desc": "Wrist watches, electrically operated, with case of precious metal — Quartz, other",
+      "duty": "87¢ each + 6.25% on case + 5.3% on battery",
+      "title_template": "{brand} Quartz Wristwatch, Precious Metal Case, {strap_material} Strap"
+    },
+    "9101192040": {
+      "htsus": "9101.19.20.40",
+      "hs6": "910119",
+      "desc": "Wrist watches with case of precious metal — With opto-electronic display only, Other",
+      "duty": "Free",
+      "title_template": "{brand} Digital Wristwatch, Precious Metal Case"
+    },
+    "9101211000": {
+      "htsus": "9101.21.10.00",
+      "hs6": "910121",
+      "desc": "Wrist watches, mechanical, automatic winding, with precious metal case — Textile/base metal strap",
+      "duty": "3.1%",
+      "title_template": "{brand} Automatic Wristwatch, Precious Metal Case, {strap_material} Strap"
+    },
+    "9101218000": {
+      "htsus": "9101.21.80",
+      "hs6": "910121",
+      "desc": "Wrist watches, mechanical, automatic winding, with precious metal case — Other",
+      "duty": "$1.61 each + 4.4% on case",
+      "title_template": "{brand} Automatic Wristwatch, Precious Metal Case, Metal Bracelet"
+    },
+    "9102111000": {
+      "htsus": "9102.11.10",
+      "hs6": "910211",
+      "desc": "Wrist watches, quartz, with gold- or silver-plated case, with strap of textile/base metal",
+      "duty": "44¢ each + 6% on case + 14% on strap + 5.3% on battery",
+      "title_template": "{brand} Quartz Wristwatch, Plated Case, {strap_material} Strap (0-1 Jewel)"
+    },
+    "9102113000": {
+      "htsus": "9102.11.30",
+      "hs6": "910211",
+      "desc": "Wrist watches, quartz, with gold- or silver-plated case — With strap of textile/base metal, 2-7 jewels",
+      "duty": "44¢ each + 6% on case + 2.8% on strap + 5.3% on battery",
+      "title_template": "{brand} Quartz Wristwatch, Plated Case, {strap_material} Strap (2-7 Jewels)"
+    },
+    "9102115000": {
+      "htsus": "9102.11.50",
+      "hs6": "910211",
+      "desc": "Wrist watches, quartz, with gold- or silver-plated case — Other",
+      "duty": "80¢ each + 6% on case + 14% on strap + 5.3% on battery",
+      "title_template": "{brand} Quartz Wristwatch, Plated Case, {strap_material} Strap (8+ Jewels)"
+    },
+    "9102211000": {
+      "htsus": "9102.21.10",
+      "hs6": "910221",
+      "desc": "Wrist watches, mechanical, auto winding, with gold/silver-plated case — Textile/base metal strap",
+      "duty": "75¢ each + 6% on case + 14% on strap",
+      "title_template": "{brand} Automatic Wristwatch, Plated Case, {strap_material} Strap (0-1 Jewel)"
+    },
+    "9102213000": {
+      "htsus": "9102.21.30",
+      "hs6": "910221",
+      "desc": "Wrist watches, mechanical, auto winding — Other, higher jewel count",
+      "duty": "$1.75 each + 4.8% on case + 11.2% on strap",
+      "title_template": "{brand} Automatic Wristwatch, {strap_material} Strap (2-7 Jewels)"
+    },
+    "9102217000": {
+      "htsus": "9102.21.70",
+      "hs6": "910221",
+      "desc": "Wrist watches, mechanical, auto winding — Textile/base metal strap",
+      "duty": "$1.53 each + 4.2% on case + 9.8% on strap",
+      "title_template": "{brand} Automatic Wristwatch, {strap_material} Strap (8-17 Jewels)"
+    },
+    "9102219000": {
+      "htsus": "9102.21.90",
+      "hs6": "910221",
+      "desc": "Wrist watches, mechanical, auto winding — Other",
+      "duty": "$1.53 each + 4.2% on case + 2% on strap",
+      "title_template": "{brand} Automatic Wristwatch, {strap_material} Strap (18+ Jewels)"
+    },
+    "9102912000": {
+      "htsus": "9102.91.20",
+      "hs6": "910291",
+      "desc": "Pocket watches and other watches — With opto-electronic display only",
+      "duty": "3.9% on movement and case + 5.3% on battery",
+      "title_template": "{brand} Digital Watch, Pocket Watch"
+    },
+    "7113111000": {
+      "htsus": "7113.11.10.00",
+      "hs6": "711311",
+      "desc": "Articles of jewelry of silver, whether or not plated or clad with other precious metal — Rope, curb, cable, chain",
+      "duty": "6.3%",
+      "title_template": "{brand} Silver {item_type} Jewelry"
+    },
+    "7113195021": {
+      "htsus": "7113.19.50.21",
+      "hs6": "711319",
+      "desc": "Articles of jewelry of other precious metal — Necklaces and neck chains",
+      "duty": "5.5%",
+      "title_template": "{brand} Gold Necklace / Chain"
+    },
+    "7113195025": {
+      "htsus": "7113.19.50.25",
+      "hs6": "711319",
+      "desc": "Articles of jewelry of other precious metal — Rings",
+      "duty": "5.5%",
+      "title_template": "{brand} Gold Ring"
+    },
+    "7113195030": {
+      "htsus": "7113.19.50.30",
+      "hs6": "711319",
+      "desc": "Articles of jewelry of other precious metal — Earrings",
+      "duty": "5.5%",
+      "title_template": "{brand} Gold Earrings"
+    },
+    "7113195045": {
+      "htsus": "7113.19.50.45",
+      "hs6": "711319",
+      "desc": "Articles of jewelry of other precious metal — Other",
+      "duty": "5.5%",
+      "title_template": "{brand} Gold Bracelet / Bangle"
+    },
+    "7113195095": {
+      "htsus": "7113.19.50.95",
+      "hs6": "711319",
+      "desc": "Articles of jewelry of other precious metal — Other",
+      "duty": "5.5%",
+      "title_template": "{brand} Gold Jewelry"
+    },
+    "7113200050": {
+      "htsus": "7113.20.10.00",
+      "hs6": "711320",
+      "desc": "Articles of jewelry of base metal clad with precious metal — Rope, chain",
+      "duty": "7%",
+      "title_template": "{brand} Platinum Jewelry"
+    },
+    "7117110000": {
+      "htsus": "7117.11.00.00",
+      "hs6": "711711",
+      "desc": "Imitation jewelry, of base metal — Cuff links and studs",
+      "duty": "8%",
+      "title_template": "{brand} Costume Jewelry, Cuff Links / Studs"
+    },
+    "7117190090": {
+      "htsus": "7117.19.90.00",
+      "hs6": "711719",
+      "desc": "Imitation jewelry, of base metal — Other",
+      "duty": "11%",
+      "title_template": "{brand} Costume Jewelry, Base Metal"
+    },
+    "7117907500": {
+      "htsus": "7117.90.75.00",
+      "hs6": "711790",
+      "desc": "Imitation jewelry — Of plastics",
+      "duty": "Free",
+      "title_template": "{brand} Plastic Costume Jewelry"
+    },
+    "7117909000": {
+      "htsus": "7117.90.90.00",
+      "hs6": "711790",
+      "desc": "Imitation jewelry — Other",
+      "duty": "11%",
+      "title_template": "{brand} Costume Jewelry / Accessory"
+    },
+    "4901990093": {
+      "htsus": "4901.99.00.93",
+      "hs6": "490199",
+      "desc": "Printed books, brochures, leaflets and similar printed matter — Other — Containing 49 or more pages each",
+      "duty": "Free",
+      "title_template": "{brand} Book / Manga / Comic"
+    },
+    "4901910040": {
+      "htsus": "4901.91.00.40",
+      "hs6": "490191",
+      "desc": "Dictionaries and encyclopedias, and serial installments thereof — Encyclopedias",
+      "duty": "Free",
+      "title_template": "{brand} Dictionary / Encyclopedia"
+    },
+    "4901990050": {
+      "htsus": "4901.99.00.50",
+      "hs6": "490199",
+      "desc": "Printed books — Technical, scientific and professional books",
+      "duty": "Free",
+      "title_template": "{brand} Technical / Scientific Book"
+    },
+    "6912004810": {
+      "htsus": "6912.00.48.10",
+      "hs6": "691200",
+      "desc": "Ceramic tableware, kitchenware, other household articles — Other — Suitable for food or drink contact",
+      "duty": "9.8%",
+      "title_template": "{brand} Ceramic Tableware / Dinnerware (Household)"
+    },
+    "6912002000": {
+      "htsus": "6912.00.20.00",
+      "hs6": "691200",
+      "desc": "Ceramic tableware, kitchenware, other household articles — Hotel or restaurant ware and other ware not household ware",
+      "duty": "28%",
+      "title_template": "{brand} Ceramic Tableware / Dinnerware (Hotel/Restaurant)"
+    },
+    "6912005000": {
+      "htsus": "6912.00.50.00",
+      "hs6": "691200",
+      "desc": "Ceramic tableware, kitchenware — Other",
+      "duty": "6%",
+      "title_template": "{brand} Ceramic Tableware / Kitchenware"
+    },
+    "6913100000": {
+      "htsus": "6913.10.10.00",
+      "hs6": "691310",
+      "desc": "Statuettes and other ornamental ceramic articles — Of porcelain",
+      "duty": "Free",
+      "title_template": "{brand} Porcelain Figurine / Ornament"
+    },
+    "6913900000": {
+      "htsus": "6913.90.10.00",
+      "hs6": "691390",
+      "desc": "Statuettes and other ornamental ceramic articles — Other",
+      "duty": "Free",
+      "title_template": "{brand} Ceramic Figurine / Ornament"
+    },
+    "6907100010": {
+      "htsus": "6907.21.40.00",
+      "hs6": "690721",
+      "desc": "Ceramic flags and paving, hearth or wall tiles — Other (porcelain/china, glazed)",
+      "duty": "8.5%",
+      "title_template": "Ceramic Tile"
+    },
+    "8517130000": {
+      "htsus": "8517.13.00.00",
+      "hs6": "851713",
+      "desc": "Smartphones",
+      "duty": "Free",
+      "title_template": "{brand} Smartphone"
+    },
+    "8471300000": {
+      "htsus": "8471.30.01.00",
+      "hs6": "847130",
+      "desc": "Portable automatic data processing machines, weighing not more than 10 kg",
+      "duty": "Free",
+      "title_template": "{brand} Tablet PC / iPad"
+    },
+    "8471410000": {
+      "htsus": "8471.41.01.10",
+      "hs6": "847141",
+      "desc": "ADP machines comprising CPU and I/O unit, with CRT",
+      "duty": "Free",
+      "title_template": "{brand} Laptop / Notebook Computer"
+    },
+    "8518220000": {
+      "htsus": "8518.22.00.00",
+      "hs6": "851822",
+      "desc": "Multiple loudspeakers, mounted in the same enclosure",
+      "duty": "Free",
+      "title_template": "{brand} Speaker"
+    },
+    "8525800500": {
+      "htsus": "8525.89.10.00",
+      "hs6": "852589",
+      "desc": "Television cameras, digital cameras — Other",
+      "duty": "Free",
+      "title_template": "{brand} Digital Camera"
+    },
+    "8504404500": {
+      "htsus": "8504.40.40.00",
+      "hs6": "850440",
+      "desc": "Static converters — Speed drive controllers",
+      "duty": "Free",
+      "title_template": "{brand} Power Adapter / Charger"
+    },
+    "8443323000": {
+      "htsus": "8443.32.10.40",
+      "hs6": "844332",
+      "desc": "Printer units — Ink jet",
+      "duty": "Free",
+      "title_template": "{brand} Printer"
+    },
+    "8528592000": {
+      "htsus": "8528.59.10.00",
+      "hs6": "852859",
+      "desc": "Monitors — Other",
+      "duty": "Free",
+      "title_template": "{brand} Monitor / Display"
+    },
+    "8517690000": {
+      "htsus": "8517.69.00.00",
+      "hs6": "851769",
+      "desc": "Apparatus for transmission/reception — Other",
+      "duty": "Free",
+      "title_template": "{brand} Network Equipment / Router"
+    },
+    "8507600090": {
+      "htsus": "8507.60.00.90",
+      "hs6": "850760",
+      "desc": "Lithium-ion accumulators — Other",
+      "duty": "3.4%",
+      "title_template": "{brand} Lithium-Ion Battery"
+    },
+    "8542310050": {
+      "htsus": "8542.31.00.50",
+      "hs6": "854231",
+      "desc": "Electronic integrated circuits — Processors and controllers — Other",
+      "duty": "Free",
+      "title_template": "Electronic IC / Processor Chip"
+    },
+    "8543709650": {
+      "htsus": "8543.70.98.60",
+      "hs6": "854370",
+      "desc": "Electrical machines having individual functions — Other",
+      "duty": "Free",
+      "title_template": "{brand} Electronic Device"
+    },
+    "3924100000": {
+      "htsus": "3924.10.10.00",
+      "hs6": "392410",
+      "desc": "Tableware of plastics — Salt, pepper, mustard dispensers",
+      "duty": "3.4%",
+      "title_template": "{brand} Plastic Tableware / Container"
+    },
+    "3924900000": {
+      "htsus": "3924.90.05.00",
+      "hs6": "392490",
+      "desc": "Other household articles of plastics",
+      "duty": "3.1%",
+      "title_template": "{brand} Plastic Household Article"
+    },
+    "3926909989": {
+      "htsus": "3926.90.99.89",
+      "hs6": "392690",
+      "desc": "Other articles of plastics — Other",
+      "duty": "5.3%",
+      "title_template": "{brand} Plastic Article / Case / Cover"
+    }
+  }
+}

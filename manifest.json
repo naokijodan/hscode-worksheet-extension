@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "HSコードワークシート作成君",
+  "version": "1.0.0",
+  "description": "商品カテゴリ別ガイドウィザードでHSコード／HTSUSコードを特定し、通関ワークシートをPDF出力します。オフライン動作・AIなし。",
+  "permissions": [
+    "storage",
+    "sidePanel"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "HSコードワークシート作成君",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "panel.html"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

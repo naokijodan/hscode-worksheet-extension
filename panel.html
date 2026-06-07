@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>HSコードワークシート</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+
+  <!-- ========== セクション: ホーム ========== -->
+  <div id="sectionHome" class="section">
+    <div class="panel-header">
+      <h1>HSコードワークシート作成君</h1>
+      <button class="link-btn" id="openSettingsLink">⚙ 設定</button>
+    </div>
+
+    <div class="disclaimer">
+      <strong>【重要】</strong>このツールが提示するコードはあくまで候補です。
+      最終的な分類・申告の責任は輸出者ご本人にあります。
+      不明な場合は通関士または米国税関（CBP）にご確認ください。
+    </div>
+
+    <!-- キーワード検索 -->
+    <div class="section-label">キーワードで検索する</div>
+    <div class="search-row">
+      <input type="text" id="keywordInput" placeholder="例: watch, toy, leather bag, 時計..." autocomplete="off">
+      <button class="btn btn-ghost btn-sm" id="searchBtn">検索</button>
+    </div>
+    <div id="searchResults" class="search-results" style="display:none;"></div>
+
+    <!-- カテゴリ別ウィザード -->
+    <div class="section-label" style="margin-top:14px;">カテゴリ別ガイドで分類する</div>
+    <div id="categoryList" class="category-list"></div>
+
+    <!-- 章から探す -->
+    <div class="section-label" style="margin-top:14px;">全ジャンルから探す</div>
+    <button class="btn btn-ghost btn-sm" id="browseBtn" style="width:100%;">章から探す（全ジャンル）</button>
+    <div class="field-note" style="margin-top:3px;">HSの全99章の階層ツリーから任意のコードを辿れます。</div>
+
+    <div class="section-label" style="margin-top:14px;">前回の作業を復元する</div>
+    <button class="btn btn-ghost btn-sm" id="restoreBtn" style="width:100%;">前回の入力を復元</button>
+  </div>
+
+  <!-- ========== セクション: 章ブラウズ ========== -->
+  <div id="sectionBrowse" class="section" style="display:none;">
+    <div class="panel-header">
+      <h1 id="browseTitle">章から探す</h1>
+      <button class="link-btn" id="backFromBrowse">← ホームへ</button>
+    </div>
+
+    <!-- Step A: 章リスト -->
+    <div id="browseStepA">
+      <div class="search-row" style="margin-bottom:8px;">
+        <input type="text" id="chapterFilterInput" placeholder="章番号 or キーワードで絞り込み…" autocomplete="off">
+      </div>
+      <div id="chapterList" class="chapter-list"></div>
+    </div>
+
+    <!-- Step B: 章内ツリー -->
+    <div id="browseStepB" style="display:none;">
+      <div class="browse-chapter-header">
+        <button class="link-btn" id="backToChapterList">← 章リストへ</button>
+        <div id="browseChapterTitle" class="browse-chapter-title"></div>
+      </div>
+      <div id="browseTree" class="browse-tree"></div>
+    </div>
+  </div>
+
+  <!-- ========== セクション: 設定 ========== -->
+  <div id="sectionSettings" class="section" style="display:none;">
+    <div class="panel-header">
+      <h1>会社情報設定</h1>
+      <button class="link-btn" id="backFromSettings">← 戻る</button>
+    </div>
+    <form id="settingsForm" novalidate>
+      <div class="form-group">
+        <label for="companyName">Company Name <span class="required">*</span></label>
+        <input type="text" id="companyName" placeholder="例: ABC Trading Co.">
+      </div>
+      <div class="form-group">
+        <label for="nameAndTitle">Name and Title <span class="required">*</span></label>
+        <input type="text" id="nameAndTitle" placeholder="例: Naoki Jodan, Export Manager">
+      </div>
+      <div class="form-group">
+        <label for="email">E-mail <span class="required">*</span></label>
+        <input type="email" id="email" placeholder="例: export@example.com">
+      </div>
+      <div id="settingsMsg" class="message" role="alert"></div>
+      <div class="button-row">
+        <button type="submit" class="btn btn-primary">保存</button>
+        <button type="button" class="btn btn-ghost" id="cancelSettings">キャンセル</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- ========== セクション: ウィザード ========== -->
+  <div id="sectionWizard" class="section" style="display:none;">
+    <div class="panel-header">
+      <h1 id="wizardTitle">分類ウィザード</h1>
+      <button class="link-btn" id="backFromWizard">← カテゴリへ</button>
+    </div>
+    <div class="wizard-progress" id="wizardProgress"></div>
+    <div id="wizardBody"></div>
+  </div>
+
+  <!-- ========== セクション: 結果 ========== -->
+  <div id="sectionResult" class="section" style="display:none;">
+    <div class="panel-header">
+      <h1>分類結果</h1>
+      <button class="link-btn" id="backFromResult">← やり直す</button>
+    </div>
+
+    <div class="result-code-box">
+      <div class="result-code-label">HTSUS（10桁）</div>
+      <div class="result-code" id="resultHtsus"></div>
+      <div class="result-code-label" style="margin-top:8px;">HS（6桁）</div>
+      <div class="result-hs6" id="resultHs6"></div>
+    </div>
+
+    <div class="form-group" style="margin-top:10px;">
+      <label for="resultDesc">公式英語説明</label>
+      <div id="resultDesc" class="result-desc"></div>
+    </div>
+    <div class="form-group">
+      <label for="resultDuty">税率（参考）</label>
+      <div id="resultDuty" class="result-desc"></div>
+    </div>
+    <div class="disclaimer" style="margin:8px 0;">
+      コードの最終確認はユーザーご自身の判断でお願いします。
+    </div>
+
+    <!-- 手動コード変更 -->
+    <div class="form-group">
+      <label for="manualHtsus">HTSUSコード（手動修正可）</label>
+      <input type="text" id="manualHtsus" placeholder="例: 9503.00.00.90" maxlength="15" list="dl_htsus">
+      <datalist id="dl_htsus"></datalist>
+      <div class="field-note">変更した場合は「コードを適用」ボタンを押してください。</div>
+    </div>
+    <button class="btn btn-ghost btn-sm" id="applyManualCode">コードを適用</button>
+
+    <div class="section-label" style="margin-top:14px;">商品情報入力</div>
+
+    <div class="form-group">
+      <label for="inputBrand">ブランド名</label>
+      <input type="text" id="inputBrand" placeholder="例: Nintendo、無地の場合は Generic">
+    </div>
+    <div class="form-group">
+      <label for="inputModel">型番・モデル名</label>
+      <input type="text" id="inputModel" placeholder="例: HAC-001">
+    </div>
+    <div class="form-group">
+      <label for="inputTitle">通関用タイトル（英語）</label>
+      <input type="text" id="inputTitle" placeholder="自動生成されます（手動修正可）">
+      <div class="field-note">輸出申告に使う英語タイトルです。マーケティング文句は含めないでください。</div>
+    </div>
+    <button class="btn btn-ghost btn-sm" id="genTitleBtn">タイトルを自動生成</button>
+
+    <div class="form-group" style="margin-top:10px;">
+      <label for="inputCountry">原産国（Country of Origin）</label>
+      <input type="text" id="inputCountry" list="dl_country" placeholder="例: Japan">
+      <datalist id="dl_country">
+        <option value="Japan">
+        <option value="China">
+        <option value="United States">
+        <option value="South Korea">
+        <option value="Taiwan">
+        <option value="Germany">
+        <option value="France">
+        <option value="Italy">
+        <option value="United Kingdom">
+        <option value="Thailand">
+        <option value="Vietnam">
+        <option value="Indonesia">
+        <option value="India">
+        <option value="Other">
+      </datalist>
+    </div>
+    <div class="form-group">
+      <label for="inputQty">数量</label>
+      <input type="number" id="inputQty" min="1" step="1" value="1">
+    </div>
+    <div class="price-row">
+      <div class="form-group" style="flex:1;">
+        <label for="inputValue">申告価格</label>
+        <input type="number" id="inputValue" min="0" step="0.01" placeholder="例: 150.00">
+      </div>
+      <div class="form-group" style="width:90px;">
+        <label for="inputCurrency">通貨</label>
+        <select id="inputCurrency">
+          <option value="USD">USD</option>
+          <option value="JPY">JPY</option>
+          <option value="EUR">EUR</option>
+          <option value="GBP">GBP</option>
+        </select>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="goToConfirmBtn" style="margin-top:10px;">確認ウィザードへ進む →</button>
+
+    <!-- コードの裏取り -->
+    <div class="verify-group">
+      <div class="verify-group-title">コードの裏取り</div>
+      <div class="verify-group-note">公式の品名・関税率と、税関の過去判例で番号を確認できます（外部サイトが開きます）。</div>
+      <div class="verify-btn-row">
+        <button class="btn btn-outline btn-sm" id="verifyHtsBtn_result">公式HTSで確認</button>
+        <button class="btn btn-outline btn-sm" id="verifyCrossBtn_result">CBP判例(CROSS)で類似品を検索</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== セクション: 確認ウィザード ========== -->
+  <div id="sectionConfirm" class="section" style="display:none;">
+    <div class="panel-header">
+      <h1>確認ウィザード</h1>
+      <button class="link-btn" id="backFromConfirm">← 結果へ戻る</button>
+    </div>
+    <div class="wizard-progress" id="confirmProgress">Block 1 / 4</div>
+
+    <!-- Block 1: HTSUSコード -->
+    <div class="wizard-block" id="cblock1">
+      <h2 class="block-title">Block 1 — HTSUSコード</h2>
+      <div class="field-group">
+        <label>HTSUS Number（10桁）</label>
+        <input type="text" id="cf_htsus" class="wiz-input">
+      </div>
+      <div class="field-group">
+        <label>HS Code（6桁）</label>
+        <input type="text" id="cf_hs6" class="wiz-input">
+      </div>
+      <div class="field-group">
+        <label>商品説明（英語）</label>
+        <input type="text" id="cf_desc" class="wiz-input">
+      </div>
+      <div class="block-nav">
+        <span></span>
+        <button class="btn btn-primary wiz-next-c" data-block="1">次へ →</button>
+      </div>
+    </div>
+
+    <!-- Block 2: 商品情報 -->
+    <div class="wizard-block" id="cblock2" style="display:none;">
+      <h2 class="block-title">Block 2 — 商品情報</h2>
+      <div class="field-group">
+        <label>通関用タイトル（英語）</label>
+        <input type="text" id="cf_title" class="wiz-input">
+      </div>
+      <div class="field-group">
+        <label>ブランド名</label>
+        <input type="text" id="cf_brand" class="wiz-input">
+      </div>
+      <div class="field-group">
+        <label>型番・モデル名</label>
+        <input type="text" id="cf_model" class="wiz-input">
+      </div>
+      <div class="field-group">
+        <label>原産国（Country of Origin）</label>
+        <input type="text" id="cf_country" class="wiz-input">
+      </div>
+      <div class="block-nav">
+        <button class="btn btn-ghost wiz-prev-c" data-block="2">← 戻る</button>
+        <button class="btn btn-primary wiz-next-c" data-block="2">次へ →</button>
+      </div>
+    </div>
+
+    <!-- Block 3: 価格 -->
+    <div class="wizard-block" id="cblock3" style="display:none;">
+      <h2 class="block-title">Block 3 — 申告価格</h2>
+      <div class="field-group">
+        <label>数量</label>
+        <input type="text" id="cf_qty" class="wiz-input">
+      </div>
+      <div class="field-group">
+        <label>申告価格</label>
+        <input type="text" id="cf_value" class="wiz-input">
+      </div>
+      <div class="field-group">
+        <label>通貨</label>
+        <input type="text" id="cf_currency" class="wiz-input">
+      </div>
+      <div class="block-nav">
+        <button class="btn btn-ghost wiz-prev-c" data-block="3">← 戻る</button>
+        <button class="btn btn-primary wiz-next-c" data-block="3">次へ →</button>
+      </div>
+    </div>
+
+    <!-- Block 4: 会社情報・AWB -->
+    <div class="wizard-block" id="cblock4" style="display:none;">
+      <h2 class="block-title">Block 4 — 会社情報・AWB</h2>
+      <div class="field-group">
+        <label>AWB Number（任意）</label>
+        <input type="text" id="cf_awb" class="wiz-input" placeholder="例: 123-4567890">
+      </div>
+      <div class="field-group">
+        <label>Company Name</label>
+        <input type="text" id="cf_company" class="wiz-input">
+      </div>
+      <div class="field-group">
+        <label>Name and Title</label>
+        <input type="text" id="cf_nameTitle" class="wiz-input">
+      </div>
+      <div class="field-group">
+        <label>E-mail</label>
+        <input type="text" id="cf_email" class="wiz-input">
+      </div>
+      <div class="block-nav">
+        <button class="btn btn-ghost wiz-prev-c" data-block="4">← 戻る</button>
+        <button class="btn btn-success" id="confirmDoneBtn">確認完了 ✓</button>
+      </div>
+    </div>
+
+    <!-- コードの裏取り -->
+    <div class="verify-group">
+      <div class="verify-group-title">コードの裏取り</div>
+      <div class="verify-group-note">公式の品名・関税率と、税関の過去判例で番号を確認できます（外部サイトが開きます）。</div>
+      <div class="verify-btn-row">
+        <button class="btn btn-outline btn-sm" id="verifyHtsBtn_confirm">公式HTSで確認</button>
+        <button class="btn btn-outline btn-sm" id="verifyCrossBtn_confirm">CBP判例(CROSS)で類似品を検索</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== セクション: 印刷プレビュー ========== -->
+  <div id="sectionPrint" class="section" style="display:none;">
+    <div class="panel-header">
+      <h1>印刷プレビュー</h1>
+      <button class="link-btn" id="backFromPrint">← ウィザードへ戻る</button>
+    </div>
+    <div class="print-note">
+      「背景のグラフィック」をオンにして印刷してください。背景色が正しく出力されます。
+    </div>
+    <div class="ws-actions">
+      <button class="btn btn-success" id="openPrintWindowBtn">印刷 / PDFとして保存</button>
+      <button class="btn btn-ghost" id="startOverBtn">最初からやり直す</button>
+    </div>
+    <div class="preview-label">内容プレビュー（印刷時はA4縦で出力されます）</div>
+    <div class="worksheet-preview-wrapper">
+      <table class="worksheet-table" id="previewTable"></table>
+    </div>
+  </div>
+
+  <script src="panel.js"></script>
+</body>
+</html>

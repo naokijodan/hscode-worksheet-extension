@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>HSコードワークシート — 印刷</title>
+  <style>
+    /* ===========================================
+       print.html — 印刷専用ページ
+       =========================================== */
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 16px;
+      background: #fff;
+      color: #333;
+      font-size: 11px;
+    }
+
+    .screen-only {
+      margin-bottom: 14px;
+    }
+    .screen-only h2 {
+      font-size: 14px;
+      margin: 0 0 8px 0;
+    }
+    .print-note {
+      background: #FFF9C4;
+      border: 1px solid #F9A825;
+      border-radius: 4px;
+      padding: 8px 10px;
+      font-size: 11px;
+      line-height: 1.5;
+      margin-bottom: 10px;
+    }
+    .btn-print {
+      display: inline-block;
+      padding: 10px 24px;
+      background: #43A047;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      margin-right: 10px;
+    }
+    .btn-print:hover { background: #388E3C; }
+    .btn-close {
+      display: inline-block;
+      padding: 10px 24px;
+      background: #e0e0e0;
+      color: #333;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    /* ワークシートテーブル */
+    .worksheet-table {
+      border-collapse: collapse;
+      width: 100%;
+      font-family: Arial, sans-serif;
+      font-size: 11px;
+    }
+    .worksheet-table td {
+      border: 1px solid #000;
+      padding: 3px 6px;
+      vertical-align: middle;
+      height: 22px;
+    }
+    .ws-title {
+      background-color: #1565C0;
+      color: #FFFFFF;
+      font-weight: bold;
+      font-size: 15px;
+      text-align: center;
+      height: 32px;
+    }
+    .ws-header {
+      background-color: #1976D2;
+      color: #FFFFFF;
+      font-weight: bold;
+      text-align: center;
+      height: 28px;
+    }
+    .ws-label {
+      background-color: #E7E6E6;
+      font-weight: bold;
+      white-space: nowrap;
+      width: 45%;
+    }
+    .ws-data {
+      background-color: #FFFFFF;
+    }
+    .ws-section-hts td { background-color: #DDEEFF !important; }
+    .ws-section-goods td { background-color: #F0F4FF !important; }
+    .ws-section-value td { background-color: #FFF2CC !important; }
+    .ws-section-company td { background-color: #D9E1F2 !important; }
+    .ws-disclaimer td {
+      background-color: #FFF8E1 !important;
+      font-size: 9px;
+      color: #795548;
+      font-style: italic;
+    }
+
+    #loadingMsg {
+      padding: 20px;
+      font-size: 14px;
+      color: #555;
+    }
+
+    /* ===========================================
+       印刷専用スタイル
+       =========================================== */
+    @media print {
+      .screen-only { display: none !important; }
+      body { padding: 0; margin: 0; }
+      .worksheet-table { width: 100%; font-size: 9pt; }
+      .worksheet-table td { padding: 2px 4px; }
+      * {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      @page {
+        size: A4 portrait;
+        margin: 15mm 12mm;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="loadingMsg">データを読み込んでいます...</div>
+
+  <div class="screen-only" id="screenHeader" style="display:none;">
+    <h2>HSコードワークシート作成君 — 印刷プレビュー</h2>
+    <div class="print-note">
+      <strong>背景色について：</strong>ブラウザの印刷ダイアログで
+      <strong>「背景のグラフィック」をオン</strong>にすると、セクションの色が正しく印刷されます。
+    </div>
+    <button class="btn-print" id="printBtn">印刷 / PDFとして保存</button>
+    <button class="btn-close" id="closeBtn">閉じる</button>
+  </div>
+
+  <table class="worksheet-table" id="worksheetTable" style="display:none;"></table>
+
+  <script src="print.js"></script>
+</body>
+</html>
