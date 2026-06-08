@@ -18,6 +18,11 @@ var state = {
   searchIndexLoading: false,
   searchIndexCallbacks: [],
 
+  // 別名辞書（遅延ロード）
+  aliases: null,          // Object: 別名キー(小文字) -> [正規化コード, ...]
+  aliasesLoading: false,
+  aliasesCallbacks: [],
+
   // ウィザード
   currentCategory: null,   // { id, label, chapter, start }
   wizardHistory: [],
@@ -191,6 +196,31 @@ function ensureSearchIndex(cb) {
           var cbs = state.searchIndexCallbacks.splice(0);
           cbs.forEach(function(fn){ fn(); });
         });
+    });
+}
+
+// -------------------------------------------------------
+// 別名辞書ロード
+// -------------------------------------------------------
+function ensureAliases(cb) {
+  if (state.aliases) { cb(); return; }
+  if (state.aliasesLoading) { state.aliasesCallbacks.push(cb); return; }
+  state.aliasesLoading = true;
+  fetch(chrome.runtime.getURL('data/aliases.json'))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      state.aliases = d;
+      state.aliasesLoading = false;
+      cb();
+      var cbs = state.aliasesCallbacks.splice(0);
+      cbs.forEach(function(fn) { fn(); });
+    })
+    .catch(function() {
+      state.aliases = {};
+      state.aliasesLoading = false;
+      cb();
+      var cbs = state.aliasesCallbacks.splice(0);
+      cbs.forEach(function(fn) { fn(); });
     });
 }
 
@@ -381,7 +411,7 @@ function generateTitle() {
 }
 
 // -------------------------------------------------------
-// キーワード検索（search_index.json 全98章対象）
+// キーワード検索（search_index.json 全98章対象 + 別名辞書）
 // -------------------------------------------------------
 function doSearch(keyword) {
   keyword = keyword.trim().toLowerCase();
@@ -391,62 +421,97 @@ function doSearch(keyword) {
   container.innerHTML = '<div class="search-no-results">検索中…</div>';
   container.style.display = '';
 
+  // search_index と aliases を両方ロードしてから検索実行
   ensureSearchIndex(function() {
-    if (!state.searchIndex || state.searchIndex.length === 0) {
-      container.innerHTML = '<div class="search-no-results">検索データが読み込めませんでした。</div>';
-      return;
-    }
+    ensureAliases(function() {
+      if (!state.searchIndex || state.searchIndex.length === 0) {
+        container.innerHTML = '<div class="search-no-results">検索データが読み込めませんでした。</div>';
+        return;
+      }
 
-    var keywordNorm = normalizeHtsno(keyword);
-    var results = [];
-    state.searchIndex.forEach(function(item) {
-      if (!item.h) return;
-      var desc = (item.d || '').toLowerCase();
-      var htsno = (item.h || '').toLowerCase();
-      var htsnoNorm = normalizeHtsno(htsno);
-      if (desc.indexOf(keyword) !== -1 ||
-          htsno.indexOf(keyword) !== -1 ||
-          (keywordNorm && htsnoNorm.indexOf(keywordNorm) !== -1)) {
-        results.push(item);
+      // --- (1) 別名辞書ヒット（先頭に追加） ---
+      var seenCodes = {};  // 重複排除用: 正規化コード -> true
+      var aliasResults = [];
+      var aliases = state.aliases || {};
+      // 完全一致: keyword がそのまま alias キー
+      // 部分一致: keyword がキーを含む or キーが keyword を含む
+      Object.keys(aliases).forEach(function(aliasKey) {
+        if (aliasKey === '_comment') return;
+        var matched = (aliasKey === keyword) ||
+                      (aliasKey.indexOf(keyword) !== -1) ||
+                      (keyword.indexOf(aliasKey) !== -1);
+        if (!matched) return;
+        var codes = aliases[aliasKey];
+        if (!Array.isArray(codes)) return;
+        codes.forEach(function(nc) {
+          if (seenCodes[nc]) return;
+          var mapEntry = state.searchMap ? state.searchMap.get(nc) : null;
+          if (!mapEntry) return;
+          seenCodes[nc] = true;
+          // search_index の元エントリを引く（h を含む完全なオブジェクトで渡す）
+          // searchMap は {d, g} のみなので、h を再組み立て
+          aliasResults.push({ h: nc, d: mapEntry.d, c: '', g: mapEntry.g });
+        });
+      });
+
+      // --- (2) 英語説明・コード照合（既存ロジック） ---
+      var keywordNorm = normalizeHtsno(keyword);
+      var engResults = [];
+      state.searchIndex.forEach(function(item) {
+        if (!item.h) return;
+        var nc = normalizeHtsno(item.h);
+        if (seenCodes[nc]) return;  // alias 済みは除外（重複排除）
+        var desc = (item.d || '').toLowerCase();
+        var htsno = (item.h || '').toLowerCase();
+        var htsnoNorm = normalizeHtsno(htsno);
+        if (desc.indexOf(keyword) !== -1 ||
+            htsno.indexOf(keyword) !== -1 ||
+            (keywordNorm && htsnoNorm.indexOf(keywordNorm) !== -1)) {
+          seenCodes[nc] = true;
+          engResults.push(item);
+        }
+      });
+
+      // 英語ヒットは 10桁コード優先でソート
+      engResults.sort(function(a, b) {
+        var aLen = normalizeHtsno(a.h || '').length;
+        var bLen = normalizeHtsno(b.h || '').length;
+        return bLen - aLen;
+      });
+
+      // alias ヒットを先頭、英語ヒットを後続に結合
+      var results = aliasResults.concat(engResults);
+
+      container.innerHTML = '';
+
+      if (results.length === 0) {
+        var div = document.createElement('div');
+        div.className = 'search-no-results';
+        div.textContent = '「' + keyword + '」に一致するコードが見つかりませんでした。英語キーワードもお試しください。';
+        container.appendChild(div);
+        return;
+      }
+
+      var shown = results.slice(0, 30);
+      shown.forEach(function(item) {
+        var el = document.createElement('div');
+        el.className = 'search-result-item';
+        el.innerHTML =
+          '<div class="search-result-code">' + escapeHtml(stripDots(item.h || '')) + '</div>' +
+          '<div class="search-result-desc">' + escapeHtml(item.d || '') + '</div>';
+        el.addEventListener('click', function() {
+          selectSearchResult(item);
+        });
+        container.appendChild(el);
+      });
+
+      if (results.length > 30) {
+        var more = document.createElement('div');
+        more.className = 'search-no-results';
+        more.textContent = '他 ' + (results.length - 30) + ' 件（キーワードを絞ると絞り込めます）';
+        container.appendChild(more);
       }
     });
-
-    // 10桁コードを優先表示
-    results.sort(function(a, b) {
-      var aLen = normalizeHtsno(a.h || '').length;
-      var bLen = normalizeHtsno(b.h || '').length;
-      return bLen - aLen;
-    });
-
-    container.innerHTML = '';
-
-    if (results.length === 0) {
-      var div = document.createElement('div');
-      div.className = 'search-no-results';
-      div.textContent = '「' + keyword + '」に一致するコードが見つかりませんでした。英語キーワードもお試しください。';
-      container.appendChild(div);
-      return;
-    }
-
-    var shown = results.slice(0, 30);
-    shown.forEach(function(item) {
-      var el = document.createElement('div');
-      el.className = 'search-result-item';
-      el.innerHTML =
-        '<div class="search-result-code">' + escapeHtml(stripDots(item.h || '')) + '</div>' +
-        '<div class="search-result-desc">' + escapeHtml(item.d || '') + '</div>';
-      el.addEventListener('click', function() {
-        selectSearchResult(item);
-      });
-      container.appendChild(el);
-    });
-
-    if (results.length > 30) {
-      var more = document.createElement('div');
-      more.className = 'search-no-results';
-      more.textContent = '他 ' + (results.length - 30) + ' 件（キーワードを絞ると絞り込めます）';
-      container.appendChild(more);
-    }
   });
 }
 

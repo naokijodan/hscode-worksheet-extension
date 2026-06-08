@@ -291,6 +291,31 @@
         {
           "label": "アーケードゲーム機（コイン投入式）",
           "leaf": "9504300010"
+        },
+        {
+          "label": "音楽CD・映画DVD・Blu-ray（音楽・映像メディア）",
+          "next": "games_media"
+        }
+      ]
+    },
+    "games_media": {
+      "question": "メディアの種類を選んでください。",
+      "answers": [
+        {
+          "label": "音楽CD（音声のみ）",
+          "leaf": "media_audio_cd"
+        },
+        {
+          "label": "映画DVD・ブルーレイ（映像）",
+          "leaf": "media_video_disc"
+        },
+        {
+          "label": "市販ソフトウェア（PC用ソフト等・小売パッケージ）",
+          "leaf": "media_software_retail"
+        },
+        {
+          "label": "その他のデータディスク（CD-ROM/DVD-ROM等）",
+          "leaf": "media_data_disc"
         }
       ]
     },
@@ -2289,6 +2314,34 @@
       "desc": "Other articles of plastics — Other",
       "duty": "5.3%",
       "title_template": "{brand} Plastic Article / Case / Cover"
+    },
+    "media_software_retail": {
+      "htsus": "8523.49.20.10",
+      "hs6": "852349",
+      "desc": "Prepackaged software for automatic data processing machines, sold at retail",
+      "duty": "Free",
+      "title_template": "{brand} Prepackaged Software (Retail)"
+    },
+    "media_audio_cd": {
+      "htsus": "8523.49.30.00",
+      "hs6": "852349",
+      "desc": "Optical disc for reproducing sound only (music CD)",
+      "duty": "Free",
+      "title_template": "{brand} Music CD (Audio Disc)"
+    },
+    "media_video_disc": {
+      "htsus": "8523.49.40.00",
+      "hs6": "852349",
+      "desc": "Optical disc for reproducing image and sound (DVD / Blu-ray video)",
+      "duty": "Free",
+      "title_template": "{brand} DVD / Blu-ray Video Disc"
+    },
+    "media_data_disc": {
+      "htsus": "8523.49.40.00",
+      "hs6": "852349",
+      "desc": "Optical disc for reproducing data (CD-ROM / DVD-ROM)",
+      "duty": "Free",
+      "title_template": "{brand} Data Disc (CD-ROM / DVD-ROM)"
     }
   }
 }
