@@ -344,6 +344,7 @@ function showResult() {
   // 入力フィールドをクリア
   document.getElementById('inputBrand').value = state.brand || '';
   document.getElementById('inputModel').value = state.model || '';
+  var condSel = document.getElementById('inputCondition'); if (condSel && state.condition) condSel.value = state.condition;
   document.getElementById('inputTitle').value = '';
   document.getElementById('inputCountry').value = state.country || '';
   document.getElementById('inputQty').value = state.qty || 1;
@@ -354,13 +355,23 @@ function showResult() {
   saveProgress();
 }
 
+// 与えられたコードが flows に登録済みの直接コード葉なら、そのテンプレを返す（未登録なら汎用）
+function templateForCode(clean) {
+  var lf = (state.flows && state.flows.leaves) ? state.flows.leaves[clean] : null;
+  return (lf && lf.title_template) ? lf.title_template : '{brand} Item';
+}
+
 function generateTitle() {
   var leaf = state.leafData;
   if (!leaf) return '';
-  var brand = document.getElementById('inputBrand').value.trim() || 'Used';
-  var model = document.getElementById('inputModel').value.trim();
   var template = leaf.title_template || '{brand} Item';
-  var title = template.replace(/{brand}/g, brand).replace(/{model}/g, model);
+  var hasCondition = template.indexOf('{condition}') !== -1;
+  // {condition}入りテンプレ（コレクター帯）はブランド未入力でも 'Used' を入れない（状態語が別途入るため重複防止）
+  var brand = document.getElementById('inputBrand').value.trim() || (hasCondition ? '' : 'Used');
+  var model = document.getElementById('inputModel').value.trim();
+  var condEl = document.getElementById('inputCondition');
+  var condition = condEl ? condEl.value : 'Pre-Owned';
+  var title = template.replace(/{condition}/g, condition).replace(/{brand}/g, brand).replace(/{model}/g, model);
   title = title.replace(/{strap_material}/g, 'Leather/Metal');
   title = title.replace(/{item_type}/g, 'Jewelry');
   if (model && title.indexOf(model) === -1) {
@@ -449,7 +460,7 @@ function selectSearchResult(item) {
     hs6: hs6,
     desc: item.d || '',
     duty: item.g || '(情報なし)',
-    title_template: '{brand} Item'
+    title_template: templateForCode(clean)
   };
   state.leafKey = clean;
   state.currentCategory = null;
@@ -469,6 +480,14 @@ function applyManualCode() {
   if (!val) return;
   var clean = normalizeHtsno(val);
 
+  // コードを変更していない場合は既存 leafData（ウィザードで選んだ種類別テンプレ）を維持し、上書きしない
+  var currentClean = state.leafData ? normalizeHtsno(state.leafData.htsus || '') : '';
+  if (state.leafData && state.leafData.title_template && clean === currentClean) {
+    document.getElementById('resultHtsus').textContent = stripDots(state.leafData.htsus || '');
+    document.getElementById('resultHs6').textContent = stripDots(state.leafData.hs6 || '');
+    return;
+  }
+
   ensureSearchIndex(function() {
     var found = state.searchMap ? state.searchMap.get(clean) : null;
     if (found) {
@@ -477,7 +496,7 @@ function applyManualCode() {
         hs6: clean.substring(0, 6),
         desc: found.d || '',
         duty: found.g || '(情報なし)',
-        title_template: '{brand} Item'
+        title_template: templateForCode(clean)
       };
       state.leafKey = clean;
     } else {
@@ -740,7 +759,7 @@ function selectTreeCode(htsno, desc, general) {
     hs6: hs6,
     desc: desc || '',
     duty: general || '(情報なし)',
-    title_template: '{brand} Item'
+    title_template: templateForCode(clean)
   };
   state.leafKey = clean;
   state.currentCategory = null;
@@ -759,6 +778,7 @@ function goToConfirm() {
   // 値を保存
   state.brand   = document.getElementById('inputBrand').value.trim();
   state.model   = document.getElementById('inputModel').value.trim();
+  state.condition = document.getElementById('inputCondition').value;
   state.customTitle = document.getElementById('inputTitle').value.trim();
   state.country = document.getElementById('inputCountry').value.trim();
   state.qty     = document.getElementById('inputQty').value || 1;

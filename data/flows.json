@@ -1336,7 +1336,7 @@
       "hs6": "950300",
       "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
       "duty": "Free",
-      "title_template": "{brand} Collectible Figure / Doll (age 13+)"
+      "title_template": "{condition} {brand} Figure / Doll, Collector Item, Age 13+, Not for Children"
     },
     "plush_u3": {
       "htsus": "9503.00.00.71",
@@ -1357,7 +1357,7 @@
       "hs6": "950300",
       "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
       "duty": "Free",
-      "title_template": "{brand} Collectible Stuffed Toy / Plush (age 13+)"
+      "title_template": "{condition} {brand} Plush / Stuffed Toy, Collector Item, Age 13+, Not for Children"
     },
     "model_u3": {
       "htsus": "9503.00.00.71",
@@ -1378,7 +1378,7 @@
       "hs6": "950300",
       "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
       "duty": "Free",
-      "title_template": "{brand} Scale Model / Model Kit (age 13+)"
+      "title_template": "{condition} {brand} Scale Model, Collector Item, Age 13+, Not for Children"
     },
     "wheeled_u3": {
       "htsus": "9503.00.00.71",
@@ -1399,7 +1399,7 @@
       "hs6": "950300",
       "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
       "duty": "Free",
-      "title_template": "{brand} Wheeled Toy (age 13+)"
+      "title_template": "{condition} {brand} Diecast Vehicle, Collector Item, Age 13+, Not for Children"
     },
     "musical_u3": {
       "htsus": "9503.00.00.71",
@@ -1420,7 +1420,7 @@
       "hs6": "950300",
       "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
       "duty": "Free",
-      "title_template": "{brand} Toy Musical Instrument (age 13+)"
+      "title_template": "{condition} {brand} Toy Musical Instrument, Collector Item, Age 13+, Not for Children"
     },
     "ball_u3": {
       "htsus": "9503.00.00.11",
@@ -1441,7 +1441,7 @@
       "hs6": "950300",
       "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
       "duty": "Free",
-      "title_template": "{brand} Inflatable Toy Ball / Balloon (rubber, age 13+)"
+      "title_template": "{condition} {brand} Toy Ball, Collector Item, Age 13+, Not for Children"
     },
     "9503000071": {
       "htsus": "9503.00.00.71",
@@ -1462,7 +1462,7 @@
       "hs6": "950300",
       "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
       "duty": "Free",
-      "title_template": "{brand} Toy / Figure / Collectible"
+      "title_template": "{condition} {brand} Toy / Figure, Collector Item, Age 13+, Not for Children"
     },
     "9504400000": {
       "htsus": "9504.40.00.00",
