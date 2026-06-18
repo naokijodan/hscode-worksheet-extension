@@ -3822,7 +3822,7 @@
     },
     {
      "label": "Diecast model / toy",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_diecast"
     },
     {
      "label": "Lamp / lighted advertising sign (electric, table type)",
@@ -3867,7 +3867,7 @@
     },
     {
      "label": "Toy animal figure (over 13 yrs)",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     }
    ]
   },
@@ -3876,7 +3876,7 @@
    "answers": [
     {
      "label": "Toy figure / action figure / character figure (over 13 yrs)",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     },
     {
      "label": "Original animation cel / hand-drawn art (collector's, >100 yrs would be 97)",
@@ -3943,7 +3943,7 @@
    "answers": [
     {
      "label": "Toy figure / action figure / character figure (over 13 yrs)",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     },
     {
      "label": "Ceramic / porcelain figurine or ornament",
@@ -3964,7 +3964,7 @@
    "answers": [
     {
      "label": "Cast iron / metal still bank (toy bank, over 13)",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_toy"
     },
     {
      "label": "Ceramic coin bank",
@@ -4081,7 +4081,7 @@
    "answers": [
     {
      "label": "Toy figure / action figure / character figure (over 13 yrs)",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     },
     {
      "label": "Display case / storage box of plastic",
@@ -4114,7 +4114,7 @@
     },
     {
      "label": "Toy figure / action figure / character figure (over 13 yrs)",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     },
     {
      "label": "Other printed memorabilia",
@@ -4193,7 +4193,7 @@
    "answers": [
     {
      "label": "Toy figure / action figure / character figure (over 13 yrs)",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     },
     {
      "label": "Ceramic / porcelain figurine or ornament",
@@ -4217,7 +4217,7 @@
     },
     {
      "label": "Plush toy",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_plush"
     }
    ]
   },
@@ -4250,7 +4250,7 @@
     },
     {
      "label": "Toy figure / action figure / character figure (over 13 yrs)",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     },
     {
      "label": "Pewter / base-metal figurine",
@@ -4559,7 +4559,7 @@
     },
     {
      "label": "Plastic figure / toy",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     }
    ]
   },
@@ -4723,7 +4723,7 @@
    "answers": [
     {
      "label": "Toy figure / action figure / character figure (over 13 yrs)",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     },
     {
      "label": "Poster / print (paper, not over 20 yrs old)",
@@ -4860,7 +4860,7 @@
    "answers": [
     {
      "label": "Diecast / scale model vehicle (over 13 yrs)",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_diecast"
     },
     {
      "label": "Railroad / transit sign of metal",
@@ -7270,7 +7270,7 @@
     },
     {
      "label": "13歳以上・コレクター向け・その他 (13+/collector/other)",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_plush"
     }
    ]
   },
@@ -7287,7 +7287,7 @@
     },
     {
      "label": "13歳以上・コレクター向け・その他 (13+/collector/other)",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_toy"
     }
    ]
   },
@@ -7304,7 +7304,7 @@
     },
     {
      "label": "13歳以上・コレクター向け・その他 (13+/collector/other)",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     }
    ]
   },
@@ -7321,7 +7321,7 @@
     },
     {
      "label": "13歳以上・コレクター向け・その他 (13+/collector/other)",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_toy"
     }
    ]
   },
@@ -7413,7 +7413,7 @@
     },
     {
      "label": "Figure / doll / toy",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     },
     {
      "label": "Apparel (T-shirt, hoodie, jacket, hat, tie) — needs garment type + fiber + gender to set 10-digit code",
@@ -7496,7 +7496,7 @@
     },
     {
      "label": "Figure / doll / toy",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     },
     {
      "label": "Apparel — needs garment type + fiber + gender",
@@ -7554,7 +7554,7 @@
     },
     {
      "label": "Figure / amiibo / statue / toy",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     },
     {
      "label": "Apparel — needs garment type + fiber + gender",
@@ -11688,7 +11688,7 @@
     },
     {
      "label": "Bobble head / figurine / non-functional figure (toy/representation)",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     },
     {
      "label": "Printed paper poster / sticker / decal / pennant of paper",
@@ -11796,7 +11796,7 @@
     },
     {
      "label": "Bobble head / figure (representation/toy)",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     },
     {
      "label": "Ceramic cup / mug (earthenware/stoneware)",
@@ -12134,7 +12134,7 @@
    "answers": [
     {
      "label": "13歳以上／コレクター向け",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     },
     {
      "label": "3〜12歳",
@@ -12151,7 +12151,7 @@
    "answers": [
     {
      "label": "13歳以上／コレクター向け",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_plush"
     },
     {
      "label": "3〜12歳",
@@ -12168,7 +12168,7 @@
    "answers": [
     {
      "label": "13歳以上／コレクター向け",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_toy"
     },
     {
      "label": "3〜12歳",
@@ -12185,7 +12185,7 @@
    "answers": [
     {
      "label": "13歳以上／コレクター向け",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_toy"
     },
     {
      "label": "3〜12歳",
@@ -12215,7 +12215,7 @@
    "answers": [
     {
      "label": "13歳以上／コレクター向け",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_diecast"
     },
     {
      "label": "3〜12歳",
@@ -12232,7 +12232,7 @@
    "answers": [
     {
      "label": "13歳以上／コレクター向け",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_toy"
     },
     {
      "label": "3〜12歳",
@@ -12249,7 +12249,7 @@
    "answers": [
     {
      "label": "13歳以上／コレクター向け",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_toy"
     },
     {
      "label": "3〜12歳",
@@ -12266,7 +12266,7 @@
    "answers": [
     {
      "label": "13歳以上／コレクター向け",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_toy"
     },
     {
      "label": "3〜12歳",
@@ -12283,7 +12283,7 @@
    "answers": [
     {
      "label": "13歳以上／コレクター向け",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_toy"
     },
     {
      "label": "3〜12歳",
@@ -12300,7 +12300,7 @@
    "answers": [
     {
      "label": "模型車両・列車本体（scale model trains）",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_model"
     },
     {
      "label": "線路設備（track fixtures/分岐・信号・機械式設備）",
@@ -12313,7 +12313,7 @@
    "answers": [
     {
      "label": "13歳以上／コレクター向け",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_toy"
     },
     {
      "label": "3〜12歳",
@@ -12330,7 +12330,7 @@
    "answers": [
     {
      "label": "13歳以上／コレクター向け",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_toy"
     },
     {
      "label": "3〜12歳",
@@ -12347,7 +12347,7 @@
    "answers": [
     {
      "label": "完成RC玩具（車・船・飛行機・ヘリ等の本体）",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_toy"
     },
     {
      "label": "ドローン（無人航空機・離陸重量250g以下）",
@@ -12364,7 +12364,7 @@
    "answers": [
     {
      "label": "13歳以上／コレクター向け",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_toy"
     },
     {
      "label": "3〜12歳",
@@ -12381,7 +12381,7 @@
    "answers": [
     {
      "label": "13歳以上／コレクター向け",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_diecast"
     },
     {
      "label": "3〜12歳",
@@ -12398,7 +12398,7 @@
    "answers": [
     {
      "label": "13歳以上／コレクター向け",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_plush"
     },
     {
      "label": "3〜12歳",
@@ -12415,7 +12415,7 @@
    "answers": [
     {
      "label": "13歳以上／コレクター向け",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     },
     {
      "label": "3〜12歳",
@@ -12432,7 +12432,7 @@
    "answers": [
     {
      "label": "玩具全般（ブリキ・フィギュア・プルトイ・プレイセット等）",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_toy"
     },
     {
      "label": "トランプ（playing cards）",
@@ -12493,7 +12493,7 @@
     },
     {
      "label": "Models & Kits",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_model"
     },
     {
      "label": "Outdoor Toys & Structures",
@@ -12662,7 +12662,7 @@
     },
     {
      "label": "Figures / toys / collectibles",
-     "leaf": "bb_l_382"
+     "leaf": "bb_l_col_figure"
     },
     {
      "label": "Posters / printed art",
@@ -20472,6 +20472,41 @@
    "desc": "T-shirts of cotton, knitted",
    "duty": "16.5%",
    "title_template": "{condition} {brand} T-shirts of cotton, knitted"
+  },
+  "bb_l_col_figure": {
+   "hs6": "9503.00",
+   "duty": "Free",
+   "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
+   "htsus": "9503.00.00.90",
+   "title_template": "\"{condition} {brand} Figure / Doll, Collector Item, Age 13+, Not for Children\""
+  },
+  "bb_l_col_plush": {
+   "hs6": "9503.00",
+   "duty": "Free",
+   "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
+   "htsus": "9503.00.00.90",
+   "title_template": "\"{condition} {brand} Plush / Stuffed Toy, Collector Item, Age 13+, Not for Children\""
+  },
+  "bb_l_col_model": {
+   "hs6": "9503.00",
+   "duty": "Free",
+   "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
+   "htsus": "9503.00.00.90",
+   "title_template": "\"{condition} {brand} Scale Model, Collector Item, Age 13+, Not for Children\""
+  },
+  "bb_l_col_diecast": {
+   "hs6": "9503.00",
+   "duty": "Free",
+   "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
+   "htsus": "9503.00.00.90",
+   "title_template": "\"{condition} {brand} Diecast Vehicle, Collector Item, Age 13+, Not for Children\""
+  },
+  "bb_l_col_toy": {
+   "hs6": "9503.00",
+   "duty": "Free",
+   "desc": "Toy not a children's product (age 13+ / adult / collector) — not subject to CPSIA",
+   "htsus": "9503.00.00.90",
+   "title_template": "\"{condition} {brand} Toy / Figure, Collector Item, Age 13+, Not for Children\""
   }
  }
 }
