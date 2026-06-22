@@ -844,7 +844,7 @@ function goToConfirm() {
   state.brand   = document.getElementById('inputBrand').value.trim();
   state.model   = document.getElementById('inputModel').value.trim();
   state.condition = document.getElementById('inputCondition').value;
-  state.customTitle = document.getElementById('inputTitle').value.trim();
+  state.customTitle = document.getElementById('inputTitle').value.replace(/\s+/g, ' ').trim();
   state.country = document.getElementById('inputCountry').value.trim();
   state.qty     = document.getElementById('inputQty').value || 1;
   state.value   = document.getElementById('inputValue').value || '';
@@ -911,7 +911,7 @@ function confirmDone() {
   state.leafData.htsus = stripDots(document.getElementById('cf_htsus').value);
   state.leafData.hs6   = stripDots(document.getElementById('cf_hs6').value);
   state.leafData.desc  = document.getElementById('cf_desc').value;
-  state.customTitle    = document.getElementById('cf_title').value;
+  state.customTitle    = document.getElementById('cf_title').value.replace(/\s+/g, ' ').trim();
   state.brand          = document.getElementById('cf_brand').value;
   state.model          = document.getElementById('cf_model').value;
   state.country        = document.getElementById('cf_country').value;
