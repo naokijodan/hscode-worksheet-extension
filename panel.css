@@ -702,3 +702,192 @@ select:focus {
 .tree-children {
   /* container for child rows; shown/hidden via JS */
 }
+
+/* ===========================================
+   CPSC eFiling 対応機能（v1.1.0）
+   =========================================== */
+
+.cpsc-alert {
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin: 10px 0;
+  line-height: 1.5;
+}
+.cpsc-alert-title {
+  font-size: 13px;
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+.cpsc-alert-body {
+  font-size: 12px;
+  margin-bottom: 10px;
+  line-height: 1.6;
+}
+.cpsc-alert-note {
+  font-size: 10px;
+  margin-top: 6px;
+  opacity: 0.85;
+}
+
+/* 赤 */
+.cpsc-alert-red {
+  background: #fce4e4;
+  border: 1px solid #ef9a9a;
+  border-left: 4px solid #e53935;
+  color: #b71c1c;
+}
+.cpsc-alert-red .cpsc-alert-title { color: #c62828; }
+
+/* 黄 */
+.cpsc-alert-yellow {
+  background: #FFF8E1;
+  border: 1px solid #FFE082;
+  border-left: 4px solid #F9A825;
+  color: #5D4037;
+}
+.cpsc-alert-yellow .cpsc-alert-title { color: #E65100; }
+
+/* 灰 */
+.cpsc-alert-gray {
+  background: #FAFAFA;
+  border: 1px solid #E0E0E0;
+  border-left: 4px solid #9E9E9E;
+  color: #424242;
+}
+.cpsc-alert-gray .cpsc-alert-title { color: #616161; }
+
+/* CPSCアラート内ボタン */
+.btn-cpsc {
+  display: inline-block;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  font-family: Arial, sans-serif;
+  margin-top: 4px;
+}
+.btn-cpsc-red    { background: #e53935; color: #fff; }
+.btn-cpsc-red:hover    { background: #c62828; }
+.btn-cpsc-yellow { background: #F9A825; color: #fff; }
+.btn-cpsc-yellow:hover { background: #E65100; }
+.btn-cpsc-gray   { background: #757575; color: #fff; }
+.btn-cpsc-gray:hover   { background: #616161; }
+
+/* 判定結果カード */
+.cpsc-result-card {
+  background: #fff;
+  border: 1px solid #EF9A9A;
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.cpsc-result-badge {
+  display: inline-block;
+  background: #e53935;
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
+  border-radius: 3px;
+  padding: 3px 8px;
+  margin-bottom: 10px;
+}
+.cpsc-result-main {
+  font-size: 14px;
+  font-weight: bold;
+  color: #b71c1c;
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+.cpsc-result-sub {
+  font-size: 12px;
+  color: #c62828;
+  margin-bottom: 10px;
+}
+.cpsc-result-regs {
+  background: #fce4e4;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: #7f0000;
+  line-height: 1.7;
+  margin-bottom: 10px;
+}
+.cpsc-result-regs strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: #b71c1c;
+}
+.cpsc-result-note {
+  background: #FFF9C4;
+  border: 1px solid #F9A825;
+  border-left: 3px solid #F57F17;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #5D4037;
+}
+
+/* Regulatory Robotガイド */
+.robot-guide {
+  background: #fff;
+  border: 1px solid #90CAF9;
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.robot-guide-title {
+  font-size: 13px;
+  font-weight: bold;
+  color: #1565C0;
+  border-left: 3px solid #1976D2;
+  padding-left: 8px;
+  margin: 0 0 10px 0;
+}
+.robot-link {
+  font-size: 11px;
+  color: #1976D2;
+  word-break: break-all;
+  background: #E3F2FD;
+  padding: 5px 8px;
+  border-radius: 3px;
+  display: block;
+  margin-bottom: 10px;
+  text-decoration: none;
+}
+.robot-link:hover { text-decoration: underline; }
+.robot-guide-subtitle {
+  font-size: 11px;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 4px;
+  margin-top: 8px;
+}
+.robot-guide ul {
+  margin: 0 0 10px 0;
+  padding-left: 18px;
+  font-size: 11px;
+  color: #444;
+  line-height: 1.7;
+}
+.robot-guide-finish {
+  font-size: 11px;
+  color: #444;
+  background: #F3F8FF;
+  border: 1px solid #90CAF9;
+  border-radius: 4px;
+  padding: 7px 10px;
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+/* ステップ3 複数選択ボタン選択状態 */
+.wiz-answer-selected {
+  background: #E3F2FD !important;
+  border-color: #1976D2 !important;
+  color: #1565C0 !important;
+  font-weight: bold;
+}

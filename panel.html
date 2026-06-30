@@ -129,6 +129,9 @@
       コードの最終確認はユーザーご自身の判断でお願いします。
     </div>
 
+    <!-- CPSCアラート（動的描画） -->
+    <div id="cpscAlertBox"></div>
+
     <!-- 手動コード変更 -->
     <div class="form-group">
       <label for="manualHtsus">HTSUSコード（手動修正可）</label>
@@ -343,6 +346,25 @@
     <div class="worksheet-preview-wrapper">
       <table class="worksheet-table" id="previewTable"></table>
     </div>
+  </div>
+
+  <!-- ========== セクション: CPSC判定ウィザード ========== -->
+  <div id="sectionCpscWiz" class="section" style="display:none;">
+    <div class="panel-header">
+      <h1>CPSC判定ウィザード</h1>
+      <button class="link-btn" id="backFromCpscWiz">← 結果へ戻る</button>
+    </div>
+    <div class="wizard-progress" id="cpscWizProgress"></div>
+    <div id="cpscWizBody"></div>
+  </div>
+
+  <!-- ========== セクション: CPSC判定結果 ========== -->
+  <div id="sectionCpscResult" class="section" style="display:none;">
+    <div class="panel-header">
+      <h1>CPSC判定結果</h1>
+      <button class="link-btn" id="backFromCpscResult">← ウィザードへ戻る</button>
+    </div>
+    <div id="cpscResultContent"></div>
   </div>
 
   <script src="panel.js"></script>

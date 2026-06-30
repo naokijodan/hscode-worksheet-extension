@@ -49,7 +49,11 @@ var state = {
 
   // ブラウズ
   browseChapter: null,     // 現在開いている章 { chapter, title, count }
-  browseChapterData: null  // その章のデータ配列（lazy-loaded）
+  browseChapterData: null, // その章のデータ配列（lazy-loaded）
+
+  // CPSC eFiling 機能（v1.1.0）
+  cpsc: null,    // cpsc_efiling_hts.json の内容
+  cpscWiz: null  // CPSC判定ウィザード状態
 };
 
 // -------------------------------------------------------
@@ -57,7 +61,8 @@ var state = {
 // -------------------------------------------------------
 function showSection(id) {
   var sections = ['sectionHome', 'sectionBrowse', 'sectionSettings', 'sectionWizard',
-                  'sectionResult', 'sectionConfirm', 'sectionPrint'];
+                  'sectionResult', 'sectionConfirm', 'sectionPrint',
+                  'sectionCpscWiz', 'sectionCpscResult'];
   sections.forEach(function(sid) {
     var el = document.getElementById(sid);
     if (el) el.style.display = (sid === id) ? '' : 'none';
@@ -383,6 +388,7 @@ function showResult() {
 
   showSection('sectionResult');
   saveProgress();
+  renderCpscAlert(stripDots(leaf.htsus || state.leafKey || ''));
 }
 
 // 与えられたコードが flows に登録済みの直接コード葉なら、そのテンプレを返す（未登録なら汎用）
@@ -577,6 +583,7 @@ function applyManualCode() {
       document.getElementById('resultDesc').textContent = state.leafData.desc;
       document.getElementById('resultDuty').textContent = state.leafData.duty;
     }
+    renderCpscAlert(state.leafData.htsus || '');
   });
 }
 
@@ -830,6 +837,686 @@ function selectTreeCode(htsno, desc, general) {
   state.currentCategory = null;
 
   showResult();
+}
+
+// -------------------------------------------------------
+// CPSC eFiling 対応機能（v1.1.0）
+// 機能A: 600リスト照合アラート
+// 機能B: CPSC判定サブウィザード
+// 機能C: Regulatory Robotガイド
+// -------------------------------------------------------
+
+/** CPSC規制マッピング（参考のみ・断定禁止） */
+var CPSC_STANDARDS = {
+  toys:                       ['ASTM F963 (16 CFR Part 1250)／玩具安全', '16 CFR Part 1501／小部品', '16 CFR Part 1303／鉛塗料（塗装あり）', '16 CFR Part 1500／有害物質'],
+  clothing:                   ['16 CFR Part 1610／可燃性', '16 CFR Part 1615・1616／子ども用寝巻き・パジャマ', '装飾金具等の鉛含有'],
+  child_chairs:               ['耐久型育児製品 16 CFR Part 1231等', '鉛 16 CFR Part 1303', '小部品規制', 'トラッキングラベル'],
+  carriages_and_strollers:    ['16 CFR Part 1227'],
+  infant_sleep_products:      ['16 CFR Part 1236（Safe Sleep規則）'],
+  pacifiers:                  ['16 CFR Part 1511'],
+  other_childrens_furniture:  ['鉛 16 CFR Part 1303', '小部品規制', 'トラッキングラベル'],
+  mattresses:                 ['16 CFR Part 1632・1633／可燃性'],
+  carpets_and_rugs:           ['16 CFR Part 1630・1631／可燃性'],
+  bicycle_helmets:            ['16 CFR Part 1203'],
+  bicycles:                   ['16 CFR Part 1512'],
+  cigarette_lighters:         ['16 CFR Part 1210（チャイルドレジスタント）'],
+  button_cell_batteries:      ["Reese's Law（16 CFR Part 1263）"],
+  imitation_jewelry:          ['鉛・カドミウム（CPSIA鉛含有／16 CFR Part 1303）'],
+  shoes:                      ['16 CFR Part 1610／可燃性（繊維製）'],
+  atvs:                       ['16 CFR Part 1420'],
+  gates_and_enclosures:       ['育児用ゲート ASTM（16 CFR Part 1239等）'],
+  fireworks:                  ['16 CFR Part 1500・1507'],
+  matchbooks:                 ['16 CFR Part 1202'],
+  drywall:                    ['CPSC石膏ボード規則'],
+  lawn_mowers:                ['16 CFR Part 1205'],
+  poison_prevention_packaging:['PPPA 16 CFR Part 1700'],
+  cb_antennae:                ['16 CFR Part 1402']
+};
+
+/** 児童製品のみのカテゴリ（13歳以上なら児童規制は不適用→参考表示に格下げ） */
+var CPSC_CHILDRENS_ONLY = ['toys', 'child_chairs', 'carriages_and_strollers',
+  'infant_sleep_products', 'pacifiers', 'other_childrens_furniture'];
+
+/** 対象年齢に関係なく規制が適用される一般製品カテゴリ */
+var CPSC_GENERAL = ['mattresses', 'carpets_and_rugs', 'bicycle_helmets', 'bicycles',
+  'cigarette_lighters', 'button_cell_batteries', 'shoes', 'lawn_mowers', 'atvs',
+  'cb_antennae', 'fireworks', 'matchbooks', 'drywall', 'gates_and_enclosures',
+  'poison_prevention_packaging'];
+// clothing と imitation_jewelry は個別扱い
+
+/** CPSCデータロード（起動時） */
+function loadCpscData() {
+  fetch(chrome.runtime.getURL('data/cpsc_efiling_hts.json'))
+    .then(function(r) { return r.json(); })
+    .then(function(d) { state.cpsc = d; })
+    .catch(function(e) { console.error('cpsc_efiling_hts.json load error', e); });
+}
+
+/**
+ * 機能A: cpscCheck(code10) — 10桁コードをCPSC対象リストと照合
+ * @returns {{level:'red'|'yellow'|'gray', catKey, nameJa, certHint, chapter}}
+ */
+function cpscCheck(code10) {
+  var norm = normalizeHtsno(code10);
+  // 10桁ガード: 不完全コードは章一致による誤yellowを避け gray とする
+  if (norm.length !== 10) {
+    return { level: 'gray', catKey: null, nameJa: null, certHint: null, chapter: '' };
+  }
+  var chapter = norm.substring(0, 2);
+  if (!state.cpsc) return { level: 'gray', catKey: null, nameJa: null, certHint: null, chapter: chapter };
+
+  // 1. byCode で完全一致（red）
+  var catKey = (state.cpsc.byCode && norm) ? (state.cpsc.byCode[norm] || null) : null;
+  if (catKey) {
+    var cat = null;
+    (state.cpsc.categories || []).forEach(function(c) { if (c.key === catKey) cat = c; });
+    return {
+      level: 'red',
+      catKey: catKey,
+      nameJa: cat ? cat.name_ja : catKey,
+      certHint: cat ? cat.cert_hint : null,
+      chapter: chapter
+    };
+  }
+
+  // 2. 章（2桁）で部分一致（yellow）
+  var chapMatch = !!(state.cpsc.chapters && chapter &&
+    state.cpsc.chapters.indexOf(chapter) !== -1);
+  if (chapMatch) {
+    return { level: 'yellow', catKey: null, nameJa: null, certHint: null, chapter: chapter };
+  }
+
+  // 3. 不一致（gray）
+  return { level: 'gray', catKey: null, nameJa: null, certHint: null, chapter: chapter };
+}
+
+/**
+ * 機能A: renderCpscAlert(code10) — #cpscAlertBox に赤/黄/灰アラートを描画。
+ * showResult() と applyManualCode() の両方から呼ぶ。
+ */
+function renderCpscAlert(code10) {
+  var box = document.getElementById('cpscAlertBox');
+  if (!box) return;
+  box.innerHTML = '';
+  if (!code10 || !state.cpsc) return;
+
+  var r = cpscCheck(code10);
+  var div = document.createElement('div');
+  div.className = 'cpsc-alert cpsc-alert-' + r.level;
+
+  var titleText, bodyText;
+  if (r.level === 'red') {
+    titleText = '⚠ CPSC eFiling 対象リストに該当';
+    bodyText  = 'このHTSコードはCPSCの電子申告スクリーニング対象（' + (r.nameJa || r.catKey) +
+                'カテゴリ）で、米国の税関で確認されます。必要な対応（適合証明の提出 か「対象外（disclaim）」申告）は、商品の対象年齢などで変わります。下の「CPSCの対象か詳しく調べる」で確認してください。';
+  } else if (r.level === 'yellow') {
+    titleText = '⚠ CPSC eFiling 対象の可能性';
+    bodyText  = 'このコードは対象リストに一致しませんでしたが、同じHTS章（第' + r.chapter +
+                '類）に対象品があります。対象かどうか・必要な対応は対象年齢などで変わります。下の判定と Regulatory Robot で確認してください。';
+  } else {
+    titleText = 'ℹ 600コードリストには一致しませんでした';
+    bodyText  = 'ただしこのリストは全ての対象を網羅していません。対象外と断定せず、念のため確認してください。';
+  }
+
+  var titleEl = document.createElement('div');
+  titleEl.className = 'cpsc-alert-title';
+  titleEl.textContent = titleText;
+
+  var bodyEl = document.createElement('div');
+  bodyEl.className = 'cpsc-alert-body';
+  bodyEl.textContent = bodyText;
+
+  var btn = document.createElement('button');
+  btn.className = 'btn-cpsc btn-cpsc-' + r.level;
+  btn.textContent = 'CPSCの対象か詳しく調べる ▶';
+  btn.addEventListener('click', function() { startCpscWizard(r); });
+
+  var robotNote = document.createElement('div');
+  robotNote.className = 'cpsc-alert-note';
+  robotNote.textContent = '※最終確認はCPSC公式ツール（Regulatory Robot）で行ってください';
+
+  var disclaimerNote = document.createElement('div');
+  disclaimerNote.className = 'cpsc-alert-note';
+  disclaimerNote.textContent = '最終的な分類・申告の責任は輸出者にあります。';
+
+  div.appendChild(titleEl);
+  div.appendChild(bodyEl);
+  div.appendChild(btn);
+  div.appendChild(robotNote);
+  div.appendChild(disclaimerNote);
+  box.appendChild(div);
+}
+
+// -------------------------------------------------------
+// 機能B: CPSC判定サブウィザード
+// -------------------------------------------------------
+
+function startCpscWizard(cpscResult) {
+  state.cpscWiz = {
+    level:     cpscResult.level,
+    catKey:    cpscResult.catKey,
+    nameJa:    cpscResult.nameJa,
+    certHint:  cpscResult.certHint,
+    chapter:   cpscResult.chapter,
+    step:      1,
+    hasStep2:  false,
+    ageGroup:  null,
+    isPajamas: null,
+    features:  [],
+    breadcrumb: []
+  };
+  showSection('sectionCpscWiz');
+  renderCpscWizBody();
+}
+
+function renderCpscWizBody() {
+  var wiz = state.cpscWiz;
+  var body = document.getElementById('cpscWizBody');
+  body.innerHTML = '';
+
+  // ステップ表示計算
+  var totalSteps, displayStep;
+  if (wiz.step === 1) {
+    totalSteps = 3; displayStep = 1;
+  } else if (wiz.step === 2) {
+    totalSteps = 3; displayStep = 2;
+  } else {
+    totalSteps  = wiz.hasStep2 ? 3 : 2;
+    displayStep = totalSteps;
+  }
+  document.getElementById('cpscWizProgress').textContent =
+    'CPSC判定 — ステップ ' + displayStep + ' / ' + totalSteps;
+
+  // パンくず
+  var catLabel = wiz.nameJa || ('第' + wiz.chapter + '類');
+  var bc = document.createElement('div');
+  bc.className = 'wiz-breadcrumb';
+  bc.textContent = [catLabel].concat(wiz.breadcrumb).join(' › ');
+  body.appendChild(bc);
+
+  if (wiz.step === 1) {
+    renderCpscStep1(body);
+  } else if (wiz.step === 2) {
+    renderCpscStep2(body);
+  } else {
+    renderCpscStep3(body);
+  }
+}
+
+function renderCpscStep1(body) {
+  var q = document.createElement('div');
+  q.className = 'wiz-question';
+  q.textContent = 'この商品は誰向けですか？';
+  body.appendChild(q);
+
+  var ansDiv = document.createElement('div');
+  ansDiv.className = 'wiz-answers';
+  var choices = [
+    { label: '0〜12歳向け（子ども向け）', value: '0-12' },
+    { label: '13歳以上向け',              value: '13plus' }
+  ];
+  choices.forEach(function(ch) {
+    var btn = document.createElement('button');
+    btn.className = 'wiz-answer-btn';
+    btn.textContent = ch.label;
+    (function(val, lbl) {
+      btn.addEventListener('click', function() {
+        state.cpscWiz.ageGroup = val;
+        state.cpscWiz.breadcrumb.push(lbl);
+        var isClothingChild = (state.cpscWiz.catKey === 'clothing') && (val === '0-12');
+        state.cpscWiz.hasStep2 = isClothingChild;
+        state.cpscWiz.step = isClothingChild ? 2 : 3;
+        renderCpscWizBody();
+      });
+    }(ch.value, ch.label));
+    ansDiv.appendChild(btn);
+  });
+  body.appendChild(ansDiv);
+}
+
+function renderCpscStep2(body) {
+  var q = document.createElement('div');
+  q.className = 'wiz-question';
+  q.textContent = '子ども用の寝巻き・パジャマですか？';
+  body.appendChild(q);
+
+  var ansDiv = document.createElement('div');
+  ansDiv.className = 'wiz-answers';
+  var choices = [
+    { label: 'はい（寝巻き・パジャマ・ナイトウェア）', value: true },
+    { label: 'いいえ（それ以外の子ども服）',           value: false }
+  ];
+  choices.forEach(function(ch) {
+    var btn = document.createElement('button');
+    btn.className = 'wiz-answer-btn';
+    btn.textContent = ch.label;
+    (function(val, lbl) {
+      btn.addEventListener('click', function() {
+        state.cpscWiz.isPajamas = val;
+        state.cpscWiz.breadcrumb.push(lbl);
+        state.cpscWiz.step = 3;
+        renderCpscWizBody();
+      });
+    }(ch.value, ch.label));
+    ansDiv.appendChild(btn);
+  });
+  body.appendChild(ansDiv);
+
+  var backBtn = document.createElement('button');
+  backBtn.className = 'wiz-back-btn';
+  backBtn.textContent = '← 前の質問に戻る';
+  backBtn.addEventListener('click', function() {
+    state.cpscWiz.step = 1;
+    state.cpscWiz.ageGroup = null;
+    state.cpscWiz.hasStep2 = false;
+    state.cpscWiz.breadcrumb.pop();
+    renderCpscWizBody();
+  });
+  body.appendChild(backBtn);
+}
+
+function renderCpscStep3(body) {
+  var q = document.createElement('div');
+  q.className = 'wiz-question';
+  q.textContent = '当てはまる特徴はどれですか？（複数可）';
+  body.appendChild(q);
+
+  var featureDefs = [
+    { key: 'battery',    label: '電池・充電が必要' },
+    { key: 'flammable',  label: '可燃性の素材を含む' },
+    { key: 'painted',    label: '塗装・コーティングあり' },
+    { key: 'smallparts', label: '小さな部品あり（3歳未満が誤飲するリスク）' },
+    { key: 'none',       label: '特に当てはまらない' }
+  ];
+
+  var selected = {};
+  var ansDiv = document.createElement('div');
+  ansDiv.className = 'wiz-answers';
+
+  featureDefs.forEach(function(feat) {
+    var btn = document.createElement('button');
+    btn.className = 'wiz-answer-btn';
+    btn.setAttribute('data-feat', feat.key);
+    btn.textContent = feat.label;
+    (function(fkey, fbtn) {
+      fbtn.addEventListener('click', function() {
+        if (fkey === 'none') {
+          Object.keys(selected).forEach(function(k) { delete selected[k]; });
+          ansDiv.querySelectorAll('.wiz-answer-btn').forEach(function(b) {
+            b.classList.remove('wiz-answer-selected');
+          });
+          selected['none'] = true;
+          fbtn.classList.add('wiz-answer-selected');
+        } else {
+          delete selected['none'];
+          var noneBtn = ansDiv.querySelector('[data-feat="none"]');
+          if (noneBtn) noneBtn.classList.remove('wiz-answer-selected');
+          if (selected[fkey]) {
+            delete selected[fkey];
+            fbtn.classList.remove('wiz-answer-selected');
+          } else {
+            selected[fkey] = true;
+            fbtn.classList.add('wiz-answer-selected');
+          }
+        }
+      });
+    }(feat.key, btn));
+    ansDiv.appendChild(btn);
+  });
+  body.appendChild(ansDiv);
+
+  var backBtn = document.createElement('button');
+  backBtn.className = 'wiz-back-btn';
+  backBtn.textContent = '← 前の質問に戻る';
+  backBtn.addEventListener('click', function() {
+    if (state.cpscWiz.hasStep2) {
+      state.cpscWiz.step = 2;
+      state.cpscWiz.isPajamas = null;
+      state.cpscWiz.breadcrumb.pop();
+    } else {
+      state.cpscWiz.step = 1;
+      state.cpscWiz.ageGroup = null;
+      state.cpscWiz.breadcrumb.pop();
+    }
+    renderCpscWizBody();
+  });
+  body.appendChild(backBtn);
+
+  var doneDiv = document.createElement('div');
+  doneDiv.style.marginTop = '14px';
+  var doneBtn = document.createElement('button');
+  doneBtn.className = 'btn btn-primary';
+  doneBtn.textContent = '判定結果を見る →';
+  doneBtn.addEventListener('click', function() {
+    state.cpscWiz.features = Object.keys(selected);
+    showCpscResult();
+  });
+  doneDiv.appendChild(doneBtn);
+  body.appendChild(doneDiv);
+}
+
+// -------------------------------------------------------
+// 機能B: 判定結果カード + 機能C: Regulatory Robotガイド
+// -------------------------------------------------------
+
+/** Q3特徴（battery/smallparts/painted/flammable）による追加規制を base 配列に重複なく加える */
+function addFeatureStandards(stds) {
+  var feats = (state.cpscWiz && state.cpscWiz.features) || [];
+  if (feats.indexOf('painted') !== -1 &&
+      stds.indexOf('16 CFR Part 1303／鉛塗料（塗装あり）') === -1) {
+    stds.push('16 CFR Part 1303／鉛塗料（塗装あり）');
+  }
+  if (feats.indexOf('flammable') !== -1 &&
+      stds.indexOf('16 CFR Part 1610／可燃性') === -1) {
+    stds.push('16 CFR Part 1610／可燃性');
+  }
+  if (feats.indexOf('smallparts') !== -1 &&
+      stds.indexOf('16 CFR Part 1501／小部品') === -1) {
+    stds.push('16 CFR Part 1501／小部品');
+  }
+  if (feats.indexOf('battery') !== -1 &&
+      stds.indexOf("16 CFR Part 1263／ボタン電池・コイン電池（Reese's Law）") === -1) {
+    stds.push("16 CFR Part 1263／ボタン電池・コイン電池（Reese's Law）");
+  }
+  return stds;
+}
+
+/**
+ * 機能B: 年齢・カテゴリ依存の判定を組み立てて返す。
+ * @returns 判定オブジェクト（バッジ/主文/補足/規制リスト/参考規制）
+ */
+function cpscDetermine() {
+  var wiz = state.cpscWiz;
+  var catKey = wiz.catKey;
+  var age = wiz.ageGroup; // '0-12' | '13plus'
+  var isChildrensOnly = CPSC_CHILDRENS_ONLY.indexOf(catKey) !== -1;
+  var isGeneral = CPSC_GENERAL.indexOf(catKey) !== -1;
+  var baseRegs = (catKey && CPSC_STANDARDS[catKey]) ? CPSC_STANDARDS[catKey].slice() : [];
+
+  var d = {
+    badgeText: '', badgeColor: null,
+    mainText: '',  mainColor: null,
+    subText: '',   subColor: null,
+    regs: [],
+    refRegs: null, refRegsTitle: null
+  };
+
+  if (age === '0-12') {
+    if (isGeneral) {
+      d.badgeText = '製品規制の対象（児童製品）';
+      d.mainText  = 'この製品規制の対象 → 一般適合証明（GCC）が必要';
+      d.subText   = '子ども向けに販売する場合はCPC相当の試験が必要なこともあります';
+      d.regs = addFeatureStandards(baseRegs);
+    } else {
+      // CHILDRENS_ONLY / clothing / imitation_jewelry
+      d.badgeText = "児童製品（Children's Product）";
+      d.mainText  = '児童製品 → CPC（児童製品証明書）＋第三者試験（CPSC公認ラボ）が必要';
+      d.subText   = '';
+      d.regs = addFeatureStandards(baseRegs);
+    }
+  } else {
+    // 13歳以上
+    if (isChildrensOnly) {
+      d.badgeColor = '#F9A825';
+      d.badgeText  = '13歳以上向け（児童製品ではありません）';
+      d.mainColor  = '#E65100';
+      d.mainText   = '児童製品ではありません（13歳以上向け）→ CPC不要';
+      d.subColor   = '#BF360C';
+      d.subText    = '該当する強制規制が無ければ適合証明も不要で、税関では「対象外（disclaim）」として申告できる場合があります。'
+                   + 'ただし「13歳以上向け」であることを示せる根拠（商品説明・パッケージ・対象年齢表示）が必要です。'
+                   + '最終確認は Regulatory Robot / CPSC で。';
+      d.regs = addFeatureStandards([]);
+      d.refRegsTitle = '（参考）0〜12歳向けの場合に適用される規制';
+      d.refRegs = baseRegs;
+    } else if (isGeneral) {
+      d.badgeColor = '#F9A825';
+      d.badgeText  = '製品規制の対象';
+      d.mainColor  = '#E65100';
+      d.mainText   = '大人向けでも、この製品規制は対象年齢に関係なく適用されます → 一般適合証明（GCC）が必要';
+      d.subText    = '';
+      d.regs = addFeatureStandards(baseRegs);
+    } else if (catKey === 'clothing') {
+      d.badgeColor = '#F9A825';
+      d.badgeText  = '大人用アパレル';
+      d.mainColor  = '#E65100';
+      d.mainText   = '大人用アパレル → 可燃性規制（16 CFR Part 1610）の対象 → 一般適合証明（GCC）';
+      d.subColor   = '#BF360C';
+      d.subText    = 'ただし現在は任意フラグ運用のケースあり。最終確認はRobot/CPSC。';
+      d.regs = addFeatureStandards(['16 CFR Part 1610／可燃性（※現在は任意フラグ運用）']);
+    } else if (catKey === 'imitation_jewelry') {
+      d.badgeColor = '#F9A825';
+      d.badgeText  = '大人向けアクセサリー';
+      d.mainColor  = '#E65100';
+      d.mainText   = '大人向け → 通常CPC不要';
+      d.subColor   = '#BF360C';
+      d.subText    = '鉛・カドミウム規制は主に子ども向けです。該当する一般規制が無ければ「対象外（disclaim）」申告になりうる。最終確認はRobot/CPSCで。';
+      d.regs = addFeatureStandards([]);
+      d.refRegsTitle = '（参考）子ども向けの場合に適用される規制';
+      d.refRegs = baseRegs;
+    } else {
+      // フォールバック（カテゴリ不明）
+      d.badgeColor = '#F9A825';
+      d.badgeText  = '一般製品（13歳以上向け）';
+      d.mainColor  = '#E65100';
+      d.mainText   = '対象規制があれば一般適合証明（GCC）が必要';
+      d.subColor   = '#BF360C';
+      d.subText    = '13歳以上向けであることを示せる根拠（パッケージ/表示/設計）が必要。最終確認はRobot/CPSCで。';
+      d.regs = addFeatureStandards(baseRegs);
+    }
+  }
+  return d;
+}
+
+/** Q3で選択した特徴を日本語ラベルの配列で返す（none/未選択は除外） */
+function getSelectedFeatureLabels() {
+  var feats = (state.cpscWiz && state.cpscWiz.features) || [];
+  var labelMap = {
+    battery:    '電池・充電',
+    flammable:  '可燃性素材',
+    painted:    '塗装・コーティング',
+    smallparts: '小さな部品'
+  };
+  var labels = [];
+  feats.forEach(function(f) {
+    if (labelMap[f]) labels.push(labelMap[f]);
+  });
+  return labels;
+}
+
+function showCpscResult() {
+  var wiz = state.cpscWiz;
+  var content = document.getElementById('cpscResultContent');
+  content.innerHTML = '';
+
+  // 判定結果カード
+  var card = document.createElement('div');
+  card.className = 'cpsc-result-card';
+
+  var det = cpscDetermine();
+
+  var badge = document.createElement('div');
+  badge.className = 'cpsc-result-badge';
+  badge.textContent = det.badgeText;
+  if (det.badgeColor) badge.style.background = det.badgeColor;
+  card.appendChild(badge);
+
+  var main = document.createElement('div');
+  main.className = 'cpsc-result-main';
+  main.textContent = det.mainText;
+  if (det.mainColor) main.style.color = det.mainColor;
+  card.appendChild(main);
+
+  if (det.subText) {
+    var sub = document.createElement('div');
+    sub.className = 'cpsc-result-sub';
+    sub.textContent = det.subText;
+    if (det.subColor) sub.style.color = det.subColor;
+    card.appendChild(sub);
+  }
+
+  // 規制リスト（該当・参考、いずれも断定しない）
+  if (det.regs && det.regs.length > 0) {
+    var regsDiv = document.createElement('div');
+    regsDiv.className = 'cpsc-result-regs';
+    var regsTitle = document.createElement('strong');
+    regsTitle.textContent = '該当しそうな規制（参考・要確認）';
+    regsDiv.appendChild(regsTitle);
+    det.regs.forEach(function(s) {
+      var line = document.createElement('div');
+      line.textContent = '・' + s;
+      regsDiv.appendChild(line);
+    });
+    card.appendChild(regsDiv);
+  }
+
+  // 参考規制（13歳以上のCHILDRENS_ONLY等。必須ではなく参考）
+  if (det.refRegs && det.refRegs.length > 0) {
+    var refDiv = document.createElement('div');
+    refDiv.className = 'cpsc-result-regs';
+    refDiv.style.background = '#F3F8FF';
+    refDiv.style.color = '#37474F';
+    var refTitle = document.createElement('strong');
+    refTitle.style.color = '#1565C0';
+    refTitle.textContent = det.refRegsTitle || '（参考）規制';
+    refDiv.appendChild(refTitle);
+    det.refRegs.forEach(function(s) {
+      var line = document.createElement('div');
+      line.textContent = '・' + s;
+      refDiv.appendChild(line);
+    });
+    card.appendChild(refDiv);
+  }
+
+  // 選択した特徴（あれば表示）
+  var featLabels = getSelectedFeatureLabels();
+  if (featLabels.length > 0) {
+    var featDiv = document.createElement('div');
+    featDiv.className = 'cpsc-result-sub';
+    featDiv.style.marginTop = '8px';
+    featDiv.textContent = '選択した特徴: ' + featLabels.join(', ');
+    card.appendChild(featDiv);
+  }
+
+  var noteDiv = document.createElement('div');
+  noteDiv.className = 'cpsc-result-note';
+  noteDiv.textContent = '必要な対応は対象年齢で変わります。子ども向け（特に寝巻き）は児童製品としてCPC＋試験。13歳以上で児童製品でない場合はCPC不要で、根拠を示せば「対象外（disclaim）」申告になりうる。最終確認はRegulatory Robot／CPSCで。';
+  card.appendChild(noteDiv);
+  content.appendChild(card);
+
+  // Regulatory Robotボタン
+  var robotBtn = document.createElement('button');
+  robotBtn.className = 'btn btn-primary';
+  robotBtn.style.marginTop = '8px';
+  robotBtn.textContent = 'Regulatory Robot で最終確認する →';
+  robotBtn.addEventListener('click', function() {
+    var robotSection = document.getElementById('cpscRobotGuide');
+    if (robotSection) {
+      robotSection.style.display = '';
+      robotSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+  content.appendChild(robotBtn);
+
+  // 分類結果に戻るリンク
+  var backLink = document.createElement('button');
+  backLink.className = 'link-btn';
+  backLink.style.display   = 'block';
+  backLink.style.marginTop = '10px';
+  backLink.style.fontSize  = '11px';
+  backLink.textContent = '← 分類結果に戻る';
+  backLink.addEventListener('click', function() { showSection('sectionResult'); });
+  content.appendChild(backLink);
+
+  // 機能C: Regulatory Robotガイド（ボタン押下まで非表示）
+  var guide = renderRobotGuide(wiz);
+  guide.id = 'cpscRobotGuide';
+  guide.style.display = 'none';
+  content.appendChild(guide);
+
+  showSection('sectionCpscResult');
+}
+
+/** 機能C: Regulatory Robotガイドを DOM 要素として生成して返す */
+function renderRobotGuide(wiz) {
+  var guide = document.createElement('div');
+  guide.className = 'robot-guide';
+  guide.style.marginTop = '14px';
+
+  var guideTitle = document.createElement('div');
+  guideTitle.className = 'robot-guide-title';
+  guideTitle.textContent = 'Regulatory Robot で最終確認する';
+  guide.appendChild(guideTitle);
+
+  var linkLabel = document.createElement('div');
+  linkLabel.className = 'robot-guide-subtitle';
+  linkLabel.textContent = '公式サイト';
+  guide.appendChild(linkLabel);
+
+  var linkEl = document.createElement('a');
+  linkEl.className = 'robot-link';
+  linkEl.href = 'https://business.cpsc.gov/robot/';
+  linkEl.target = '_blank';
+  linkEl.rel = 'noopener';
+  linkEl.textContent = 'https://business.cpsc.gov/robot/（英語サイト・日本語非対応）';
+  guide.appendChild(linkEl);
+
+  var entryLabel = document.createElement('div');
+  entryLabel.className = 'robot-guide-subtitle';
+  entryLabel.textContent = 'ご利用手順';
+  guide.appendChild(entryLabel);
+
+  var stepUl = document.createElement('ul');
+  ['Step 1: 任意のタイトルを入力', 'Step 2: 利用規約に同意（Agree and Continue）'].forEach(function(t) {
+    var li = document.createElement('li');
+    li.textContent = t;
+    stepUl.appendChild(li);
+  });
+  guide.appendChild(stepUl);
+
+  var fillLabel = document.createElement('div');
+  fillLabel.className = 'robot-guide-subtitle';
+  fillLabel.textContent = 'この商品での回答ガイド';
+  guide.appendChild(fillLabel);
+
+  var fillUl = document.createElement('ul');
+  var ageText      = (wiz.ageGroup === '0-12') ? '0〜12歳（児童製品）' : '13歳以上';
+  var clothingText = (wiz.catKey === 'clothing') ? 'はい' : 'いいえ';
+  var catText      = wiz.nameJa || ('第' + wiz.chapter + '類');
+  var fillItems = [
+    { label: '対象年齢',     value: ageText },
+    { label: '衣類か',       value: clothingText },
+    { label: 'カテゴリ',     value: catText },
+    { label: 'その他の質問', value: '画面の案内に従って回答' }
+  ];
+  fillItems.forEach(function(item) {
+    var li = document.createElement('li');
+    li.textContent = item.label + ' = ';
+    var strong = document.createElement('strong');
+    strong.textContent = item.value;
+    li.appendChild(strong);
+    fillUl.appendChild(li);
+  });
+  guide.appendChild(fillUl);
+
+  // 13歳以上向けのとき disclaim の補足を追加
+  if (wiz.ageGroup === '13plus') {
+    var disclaimHint = document.createElement('div');
+    disclaimHint.className = 'robot-guide-finish';
+    disclaimHint.textContent = '13歳以上向けで児童製品でない場合、Robotでも「not a children\'s product」と出れば、税関対応は適合証明ではなく「対象外（disclaim）」申告になり得ます（最終確認はCPSC）。';
+    guide.appendChild(disclaimHint);
+  }
+
+  var finishDiv = document.createElement('div');
+  finishDiv.className = 'robot-guide-finish';
+  finishDiv.textContent = '仕上げ: 結果をPDF保存 → eFilingSupport@cpsc.gov に送って書面で確認';
+  guide.appendChild(finishDiv);
+
+  var disclaimerEl = document.createElement('div');
+  disclaimerEl.className = 'disclaimer';
+  disclaimerEl.textContent = 'このツールの判定は参考です。最終責任は輸出者にあります。';
+  guide.appendChild(disclaimerEl);
+
+  return guide;
 }
 
 // -------------------------------------------------------
@@ -1122,6 +1809,7 @@ window.addEventListener('load', function() {
   });
 
   loadChapterIndex(null);
+  loadCpscData();
 
   // ---- ホーム ----
   document.getElementById('openSettingsLink').addEventListener('click', function() {
@@ -1241,6 +1929,15 @@ window.addEventListener('load', function() {
   document.getElementById('verifyCrossBtn_result').addEventListener('click', openVerifyCross);
   document.getElementById('verifyHtsBtn_confirm').addEventListener('click', openVerifyHts);
   document.getElementById('verifyCrossBtn_confirm').addEventListener('click', openVerifyCross);
+
+  // ---- CPSC ウィザード/結果 ----
+  document.getElementById('backFromCpscWiz').addEventListener('click', function() {
+    showSection('sectionResult');
+  });
+  document.getElementById('backFromCpscResult').addEventListener('click', function() {
+    if (state.cpscWiz) { showSection('sectionCpscWiz'); renderCpscWizBody(); }
+    else { showSection('sectionResult'); }
+  });
 
   // 初期表示
   showSection('sectionHome');

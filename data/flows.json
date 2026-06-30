@@ -1,76 +1,16 @@
 {
   "categories": [
     {
-      "id": "bb_antiques",
-      "label": "アンティーク・骨董",
+      "id": "bb_toys_hobbies",
+      "label": "おもちゃ・ホビー・カード",
       "chapter": "eBay",
-      "start": "bb_antiques_1"
-    },
-    {
-      "id": "bb_art",
-      "label": "美術品",
-      "chapter": "eBay",
-      "start": "bb_art_1"
-    },
-    {
-      "id": "bb_books_magazines",
-      "label": "書籍・雑誌",
-      "chapter": "eBay",
-      "start": "bb_books_magazines_1"
-    },
-    {
-      "id": "bb_business_industrial",
-      "label": "ビジネス・産業用",
-      "chapter": "eBay",
-      "start": "bb_business_industrial_1"
-    },
-    {
-      "id": "bb_cameras_photo",
-      "label": "カメラ・写真",
-      "chapter": "eBay",
-      "start": "bb_cameras_photo_1"
-    },
-    {
-      "id": "bb_cell_phones_accessories",
-      "label": "携帯電話・アクセサリ",
-      "chapter": "eBay",
-      "start": "bb_cell_phones_accessories_1"
-    },
-    {
-      "id": "bb_clothing_shoes_accessories",
-      "label": "衣類・靴・アクセサリ",
-      "chapter": "eBay",
-      "start": "bb_clothing_shoes_accessories_1"
-    },
-    {
-      "id": "bb_coins_paper_money",
-      "label": "硬貨・紙幣",
-      "chapter": "eBay",
-      "start": "bb_coins_paper_money_1"
+      "start": "bb_toys_hobbies_1"
     },
     {
       "id": "bb_collectibles",
-      "label": "コレクティブル",
+      "label": "コレクティブル・カード",
       "chapter": "eBay",
       "start": "bb_collectibles_1"
-    },
-    {
-      "id": "bb_computers_tablets_networking",
-      "label": "PC・タブレット・ネットワーク",
-      "chapter": "eBay",
-      "start": "bb_computers_tablets_networking_1"
-    },
-    {
-      "id": "bb_consumer_electronics",
-      "label": "家電・AV機器",
-      "chapter": "eBay",
-      "start": "bb_consumer_electronics_1"
-    },
-    {
-      "id": "bb_crafts",
-      "label": "ハンドクラフト・手芸",
-      "chapter": "eBay",
-      "start": "bb_crafts_1"
     },
     {
       "id": "bb_dolls_bears",
@@ -79,28 +19,28 @@
       "start": "bb_dolls_bears_1"
     },
     {
-      "id": "bb_entertainment_memorabilia",
-      "label": "エンタメ記念品",
+      "id": "bb_sports_mem_cards_fan_shop",
+      "label": "スポーツ記念品・カード",
       "chapter": "eBay",
-      "start": "bb_entertainment_memorabilia_1"
+      "start": "bb_sports_mem_cards_fan_shop_1"
     },
     {
-      "id": "bb_health_beauty",
-      "label": "ヘルス・ビューティ",
+      "id": "bb_sporting_goods",
+      "label": "スポーツ用品",
       "chapter": "eBay",
-      "start": "bb_health_beauty_1"
+      "start": "bb_sporting_goods_1"
     },
     {
-      "id": "bb_home_garden",
-      "label": "ホーム・ガーデン",
+      "id": "bb_video_games_consoles",
+      "label": "テレビゲーム・ゲーム機",
       "chapter": "eBay",
-      "start": "bb_home_garden_1"
+      "start": "bb_video_games_consoles_1"
     },
     {
-      "id": "bb_jewelry_watches",
-      "label": "ジュエリー・時計",
+      "id": "bb_books_magazines",
+      "label": "書籍・雑誌・漫画",
       "chapter": "eBay",
-      "start": "bb_jewelry_watches_1"
+      "start": "bb_books_magazines_1"
     },
     {
       "id": "bb_movies_tv",
@@ -121,6 +61,90 @@
       "start": "bb_musical_instruments_gear_1"
     },
     {
+      "id": "bb_cameras_photo",
+      "label": "カメラ・写真",
+      "chapter": "eBay",
+      "start": "bb_cameras_photo_1"
+    },
+    {
+      "id": "bb_jewelry_watches",
+      "label": "ジュエリー・時計",
+      "chapter": "eBay",
+      "start": "bb_jewelry_watches_1"
+    },
+    {
+      "id": "bb_antiques",
+      "label": "アンティーク・骨董",
+      "chapter": "eBay",
+      "start": "bb_antiques_1"
+    },
+    {
+      "id": "bb_art",
+      "label": "美術品",
+      "chapter": "eBay",
+      "start": "bb_art_1"
+    },
+    {
+      "id": "bb_business_industrial",
+      "label": "ビジネス・産業用",
+      "chapter": "eBay",
+      "start": "bb_business_industrial_1"
+    },
+    {
+      "id": "bb_cell_phones_accessories",
+      "label": "携帯電話・アクセサリ",
+      "chapter": "eBay",
+      "start": "bb_cell_phones_accessories_1"
+    },
+    {
+      "id": "bb_clothing_shoes_accessories",
+      "label": "衣類・靴・アクセサリ",
+      "chapter": "eBay",
+      "start": "bb_clothing_shoes_accessories_1"
+    },
+    {
+      "id": "bb_coins_paper_money",
+      "label": "硬貨・紙幣",
+      "chapter": "eBay",
+      "start": "bb_coins_paper_money_1"
+    },
+    {
+      "id": "bb_computers_tablets_networking",
+      "label": "PC・タブレット・ネットワーク",
+      "chapter": "eBay",
+      "start": "bb_computers_tablets_networking_1"
+    },
+    {
+      "id": "bb_consumer_electronics",
+      "label": "家電・AV機器",
+      "chapter": "eBay",
+      "start": "bb_consumer_electronics_1"
+    },
+    {
+      "id": "bb_crafts",
+      "label": "ハンドクラフト・手芸",
+      "chapter": "eBay",
+      "start": "bb_crafts_1"
+    },
+    {
+      "id": "bb_entertainment_memorabilia",
+      "label": "エンタメ記念品",
+      "chapter": "eBay",
+      "start": "bb_entertainment_memorabilia_1"
+    },
+    {
+      "id": "bb_health_beauty",
+      "label": "ヘルス・ビューティ",
+      "chapter": "eBay",
+      "start": "bb_health_beauty_1"
+    },
+    {
+      "id": "bb_home_garden",
+      "label": "ホーム・ガーデン",
+      "chapter": "eBay",
+      "start": "bb_home_garden_1"
+    },
+    {
       "id": "bb_pet_supplies",
       "label": "ペット用品",
       "chapter": "eBay",
@@ -133,34 +157,10 @@
       "start": "bb_pottery_glass_1"
     },
     {
-      "id": "bb_sporting_goods",
-      "label": "スポーツ用品",
-      "chapter": "eBay",
-      "start": "bb_sporting_goods_1"
-    },
-    {
-      "id": "bb_sports_mem_cards_fan_shop",
-      "label": "スポーツ記念品・カード",
-      "chapter": "eBay",
-      "start": "bb_sports_mem_cards_fan_shop_1"
-    },
-    {
       "id": "bb_stamps",
       "label": "切手",
       "chapter": "eBay",
       "start": "bb_stamps_1"
-    },
-    {
-      "id": "bb_toys_hobbies",
-      "label": "おもちゃ・ホビー",
-      "chapter": "eBay",
-      "start": "bb_toys_hobbies_1"
-    },
-    {
-      "id": "bb_video_games_consoles",
-      "label": "テレビゲーム・ゲーム機",
-      "chapter": "eBay",
-      "start": "bb_video_games_consoles_1"
     }
   ],
   "nodes": {
