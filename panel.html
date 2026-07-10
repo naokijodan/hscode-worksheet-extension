@@ -20,6 +20,11 @@
       不明な場合は通関士または米国税関（CBP）にご確認ください。
     </div>
 
+    <!-- AI利用 -->
+    <div class="section-label" style="margin-top:14px;">AIでページを分析する</div>
+    <button class="btn btn-primary btn-sm" id="aiAnalyzeBtn" style="width:100%;">✨ 開いているページから商品情報を取得</button>
+    <div id="aiAnalyzeMsg" class="message" style="display:none;margin-top:6px;"></div>
+
     <!-- キーワード検索 -->
     <div class="section-label">キーワードで検索する</div>
     <div class="search-row">
@@ -85,6 +90,12 @@
         <label for="email">E-mail <span class="required">*</span></label>
         <input type="email" id="email" placeholder="例: export@example.com">
       </div>
+      <div class="section-label" style="margin-top:16px;">OpenAI API設定（AI利用機能）</div>
+      <div class="form-group">
+        <label for="openaiKey">APIキー</label>
+        <input type="password" id="openaiKey" placeholder="sk-...">
+        <div class="field-note">AI利用機能を使う場合のみ必要です。ローカルに保存されます。</div>
+      </div>
       <div id="settingsMsg" class="message" role="alert"></div>
       <div class="button-row">
         <button type="submit" class="btn btn-primary">保存</button>
@@ -110,6 +121,7 @@
       <button class="link-btn" id="backFromResult">← やり直す</button>
     </div>
 
+    <div id="aiResultBadge" class="ai-badge" style="display:none;">✨ AI入力補助 — 内容を確認・修正してから次へ進んでください</div>
     <div class="result-code-box">
       <div class="result-code-label">HTSUS（10桁）</div>
       <div class="result-code" id="resultHtsus"></div>

@@ -53,7 +53,8 @@ var state = {
 
   // CPSC eFiling 機能（v1.1.0）
   cpsc: null,    // cpsc_efiling_hts.json の内容
-  cpscWiz: null  // CPSC判定ウィザード状態
+  cpscWiz: null, // CPSC判定ウィザード状態
+  openaiKey: '',
 };
 
 // -------------------------------------------------------
@@ -1773,7 +1774,7 @@ function restoreProgress() {
 // 設定（会社情報）
 // -------------------------------------------------------
 function loadSettings() {
-  chrome.storage.local.get(['_hsCompany'], function(stored) {
+  chrome.storage.local.get(['_hsCompany', '_hsOpenAiKey'], function(stored) {
     if (stored._hsCompany) {
       try {
         state.company = JSON.parse(stored._hsCompany);
@@ -1781,6 +1782,11 @@ function loadSettings() {
         document.getElementById('nameAndTitle').value = state.company.nameTitle || '';
         document.getElementById('email').value        = state.company.email || '';
       } catch(e) {}
+    }
+    if (stored._hsOpenAiKey) {
+      state.openaiKey = stored._hsOpenAiKey;
+      var el = document.getElementById('openaiKey');
+      if (el) el.value = state.openaiKey;
     }
   });
 }
@@ -1790,7 +1796,11 @@ function saveSettings(e) {
   state.company.name      = document.getElementById('companyName').value.trim();
   state.company.nameTitle = document.getElementById('nameAndTitle').value.trim();
   state.company.email     = document.getElementById('email').value.trim();
-  chrome.storage.local.set({ _hsCompany: JSON.stringify(state.company) }, function() {
+  var keyEl = document.getElementById('openaiKey');
+  if (keyEl) state.openaiKey = keyEl.value.trim();
+  var toSave = { _hsCompany: JSON.stringify(state.company) };
+  if (state.openaiKey) toSave._hsOpenAiKey = state.openaiKey;
+  chrome.storage.local.set(toSave, function() {
     var msg = document.getElementById('settingsMsg');
     showMessage(msg, 'success', '保存しました。');
     setTimeout(function() { showSection('sectionHome'); }, 800);
@@ -1939,6 +1949,256 @@ window.addEventListener('load', function() {
     else { showSection('sectionResult'); }
   });
 
+  // ---- AI解析 ----
+  document.getElementById('aiAnalyzeBtn').addEventListener('click', startAiFlow);
+
   // 初期表示
   showSection('sectionHome');
 });
+
+// -------------------------------------------------------
+// AI入力補助
+// -------------------------------------------------------
+
+function showAiBadge(show) {
+  var el = document.getElementById('aiResultBadge');
+  if (el) el.style.display = show ? '' : 'none';
+}
+
+function startAiFlow() {
+  var msg = document.getElementById('aiAnalyzeMsg');
+  var btn = document.getElementById('aiAnalyzeBtn');
+
+  if (!state.openaiKey) {
+    showMessage(msg, 'error', 'APIキーが未設定です。設定画面で OpenAI APIキーを入力してください。');
+    msg.style.display = '';
+    return;
+  }
+
+  btn.disabled = true;
+  showMessage(msg, 'info', '分析中…');
+  msg.style.display = '';
+
+  getPageInfo(function(pageInfo, errReason) {
+    if (!pageInfo) {
+      showMessage(msg, 'error', (errReason || 'ページ情報を取得できませんでした') + '。商品ページを開いてから試してください。');
+      msg.style.display = '';
+      btn.disabled = false;
+      return;
+    }
+    callOpenAI(pageInfo, function(err, aiData) {
+      btn.disabled = false;
+      if (err || !aiData) {
+        showMessage(msg, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '不明なエラー'));
+        return;
+      }
+      msg.style.display = 'none';
+      showResultFromAi(aiData);
+    });
+  });
+}
+
+function getPageInfo(cb) {
+  chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+    if (!tabs || !tabs[0]) { cb(null, 'タブが見つかりません'); return; }
+    var tab = tabs[0];
+    if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:')) {
+      cb(null, '拡張機能や設定ページでは使えません。商品ページを開いてください'); return;
+    }
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: function() {
+        var url = location.href;
+        var host = location.hostname;
+
+        function getText(selectors) {
+          for (var i = 0; i < selectors.length; i++) {
+            var el = document.querySelector(selectors[i]);
+            if (el && el.textContent.trim()) return el.textContent.trim().substring(0, 400);
+          }
+          return '';
+        }
+        function getMeta(names) {
+          for (var i = 0; i < names.length; i++) {
+            var el = document.querySelector('meta[property="' + names[i] + '"],meta[name="' + names[i] + '"]');
+            if (el && el.getAttribute('content')) return el.getAttribute('content');
+          }
+          return '';
+        }
+
+        // JSON-LD Product schema
+        var jsonldProduct = null;
+        var scripts = document.querySelectorAll('script[type="application/ld+json"]');
+        for (var si = 0; si < scripts.length; si++) {
+          try {
+            var d = JSON.parse(scripts[si].textContent);
+            var items = d['@graph'] ? d['@graph'] : (Array.isArray(d) ? d : [d]);
+            for (var ii = 0; ii < items.length; ii++) {
+              if (items[ii]['@type'] === 'Product') { jsonldProduct = items[ii]; break; }
+            }
+            if (jsonldProduct) break;
+          } catch(e) {}
+        }
+
+        var productName = '';
+        var brand = '';
+        var condition = '';
+        var description = '';
+        var category = '';
+
+        // --- サイト別抽出 ---
+        // Mercari Japan
+        if (host.includes('mercari.com')) {
+          productName = getText(['h1[class*="name"]','h1[data-testid="name"]','h1','p[data-testid="product-name"]']);
+          description = getText(['[data-testid="description"]','p[class*="description"]','[class*="ItemDescription"]']).substring(0,300);
+          condition   = getText(['[data-testid="condition"]','[class*="condition"]','span[class*="status"]']);
+          category    = getText(['[data-testid="breadcrumb"]','nav[aria-label="breadcrumb"]','.breadcrumb']).substring(0,100);
+          brand       = getText(['[data-testid="brand"]','[class*="brand"]']);
+        }
+        // Yahoo Auctions Japan
+        else if (host.includes('auctions.yahoo.co.jp') || host.includes('buyee.jp')) {
+          productName = getText(['h1[class*="Product__title"]','.Product__title','h1']);
+          description = getText(['.ProductExplanation__itemDescription','.ProductDetail__description','[class*="description"]']).substring(0,300);
+          condition   = getText(['.ProductDetail__condition','[class*="condition"]']);
+        }
+        // Hard Off / Book Off
+        else if (host.includes('hardoff.co.jp') || host.includes('bookoff.co.jp')) {
+          productName = getText(['h1','.item-name','.product-name']);
+          description = getText(['.item-detail','.product-detail','.description']).substring(0,300);
+        }
+        // eBay
+        else if (host.includes('ebay.com')) {
+          productName = getText(['h1#itemTitle','h1[itemprop="name"]','h1']);
+          description = getText(['#viTabs_0_is','#itemDescriptionURL','[itemprop="description"]']).substring(0,300);
+          brand       = getText(['[itemprop="brand"]','[data-testid="x-item-specifics"] [class*="brand"]']);
+          condition   = getText(['#condText','[itemprop="itemCondition"]']);
+        }
+
+        // JSON-LDで補完
+        if (jsonldProduct) {
+          if (!productName) productName = jsonldProduct.name || '';
+          if (!brand && jsonldProduct.brand) brand = typeof jsonldProduct.brand === 'string' ? jsonldProduct.brand : (jsonldProduct.brand.name || '');
+          if (!description && jsonldProduct.description) description = String(jsonldProduct.description).substring(0,300);
+          if (!condition && jsonldProduct.itemCondition) condition = String(jsonldProduct.itemCondition).replace(/https?:\/\/schema\.org\//,'').replace('Condition','');
+        }
+
+        // 汎用フォールバック
+        if (!productName) productName = getText(['h1']) || getMeta(['og:title']) || document.title;
+        if (!description) description = getMeta(['og:description','description']).substring(0,300);
+
+        return {
+          url: url,
+          host: host,
+          productName: productName,
+          brand: brand,
+          condition: condition,
+          description: description,
+          category: category
+        };
+      }
+    }, function(results) {
+      if (chrome.runtime.lastError) {
+        cb(null, chrome.runtime.lastError.message); return;
+      }
+      if (results && results[0] && results[0].result) {
+        cb(results[0].result, null);
+      } else {
+        cb(null, 'ページ情報を取得できませんでした');
+      }
+    });
+  });
+}
+
+function callOpenAI(pageInfo, cb) {
+  var lines = [
+    'Product URL: ' + pageInfo.url,
+    'Product name: ' + (pageInfo.productName || ''),
+  ];
+  if (pageInfo.brand)       lines.push('Brand: ' + pageInfo.brand);
+  if (pageInfo.condition)   lines.push('Condition: ' + pageInfo.condition);
+  if (pageInfo.category)    lines.push('Category on site: ' + pageInfo.category);
+  if (pageInfo.description) lines.push('Description: ' + pageInfo.description);
+
+  var userContent = lines.join('\n');
+
+  var systemPrompt = [
+    'You are a US customs (HTSUS) classification expert for Japanese secondhand goods exported to the US.',
+    'Given product information, return ONLY a JSON object with these exact fields:',
+    '  "htsus": 10-digit HTSUS number, digits only, no dots (e.g. "9503000090")',
+    '  "hs6": first 6 digits of htsus (e.g. "950300")',
+    '  "description": official English HTS category description (e.g. "Toys representing animals or non-human creatures")',
+    '  "brand": brand name extracted from product info, or "Generic" if unknown',
+    '  "model": model number or product/character name',
+    '  "title": customs declaration title in plain English, max 40 chars, no marketing language, no Japanese characters. Format: "[Brand] [Character/Model] [Item Type] [Age]". Always include brand name and character or model name when available. Append age requirement at the end when applicable: use "For Ages 15+" for anime/manga figures and collectibles (not toys for actual play), "For Ages 13+" for trading cards and card games, "For Ages X+" for toys with a clear target age. Omit age if the product is not a toy or collectible. Example: "Bandai Gundam RX-78-2 Figure For Ages 15+"',
+    '  "country": country of origin — default "Japan" for secondhand Japanese marketplace items unless clearly otherwise',
+    '  "reason": one sentence in Japanese explaining why you chose this HTSUS code',
+    'Return ONLY the JSON object. No markdown, no explanation outside the JSON.'
+  ].join('\n');
+
+  fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + state.openaiKey
+    },
+    body: JSON.stringify({
+      model: 'gpt-5.4',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent }
+      ],
+      max_completion_tokens: 400
+    })
+  })
+  .then(function(r) {
+    if (!r.ok) {
+      return r.json().then(function(errBody) {
+        throw new Error((errBody.error && errBody.error.message) || ('HTTP ' + r.status));
+      });
+    }
+    return r.json();
+  })
+  .then(function(data) {
+    var content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!content) throw new Error('AIからの応答が空でした');
+    // JSON部分だけ抽出（余計なテキストを除去）
+    var match = content.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('AIの応答にJSONが含まれていませんでした');
+    try {
+      cb(null, JSON.parse(match[0]));
+    } catch(e) {
+      throw new Error('JSONの解析に失敗しました: ' + e.message);
+    }
+  })
+  .catch(function(e) {
+    cb(e, null);
+  });
+}
+
+function showResultFromAi(aiData) {
+  state.leafData = {
+    htsus: (aiData.htsus || '').replace(/[.\-\s]/g, ''),
+    hs6:   (aiData.hs6   || '').replace(/[.\-\s]/g, ''),
+    desc:  aiData.description || '',
+    duty:  ''
+  };
+  state.leafKey        = state.leafData.htsus;
+  state.currentCategory = null;
+  state.browseChapter   = null;
+  state.brand     = aiData.brand   || '';
+  state.model     = aiData.model   || '';
+  state.country   = aiData.country || 'Japan';
+  state.condition = 'Pre-Owned';
+
+  showResult();
+  document.getElementById('inputTitle').value = aiData.title || '';
+
+  // AI判定理由を表示
+  var badge = document.getElementById('aiResultBadge');
+  if (badge) {
+    var reasonText = aiData.reason ? '💡 ' + aiData.reason : '';
+    badge.innerHTML = '✨ <strong>AI入力補助</strong> — 内容を確認・修正してから次へ進んでください' +
+      (reasonText ? '<div class="ai-reason">' + escapeHtml(reasonText) + '</div>' : '');
+    badge.style.display = '';
+  }
+}
