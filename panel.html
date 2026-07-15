@@ -21,12 +21,14 @@
     </div>
 
     <!-- AI利用 -->
-    <div class="section-label" style="margin-top:14px;">AIでページを分析する</div>
-    <button class="btn btn-primary btn-sm" id="aiAnalyzeBtn" style="width:100%;">✨ 開いているページから商品情報を取得</button>
+    <div class="section-label" style="margin-top:14px;">AIで作成する</div>
+    <button class="btn btn-primary btn-sm" id="aiAnalyzeBtn" style="width:100%;">✨ AIでHSコードを分析する</button>
     <div id="aiAnalyzeMsg" class="message" style="display:none;margin-top:6px;"></div>
+    <button class="btn btn-danger btn-sm" id="tscaAiBtn" style="width:100%;margin-top:8px;">📄 AIでTSCA書類を作成する</button>
+    <div id="tscaAiHomeMsg" class="message" style="display:none;margin-top:6px;"></div>
 
-    <!-- キーワード検索 -->
-    <div class="section-label">キーワードで検索する</div>
+    <!-- マニュアルで探す -->
+    <div class="section-label" style="margin-top:14px;">マニュアルでHSコードを探す</div>
     <div class="search-row">
       <input type="text" id="keywordInput" placeholder="例: watch, toy, leather bag, 時計..." autocomplete="off">
       <button class="btn btn-ghost btn-sm" id="searchBtn">検索</button>
@@ -34,13 +36,15 @@
     <div id="searchResults" class="search-results" style="display:none;"></div>
 
     <!-- カテゴリ別ウィザード -->
-    <div class="section-label" style="margin-top:14px;">カテゴリ別ガイドで分類する</div>
     <div id="categoryList" class="category-list"></div>
 
     <!-- 章から探す -->
-    <div class="section-label" style="margin-top:14px;">全ジャンルから探す</div>
-    <button class="btn btn-ghost btn-sm" id="browseBtn" style="width:100%;">章から探す（全ジャンル）</button>
+    <button class="btn btn-ghost btn-sm" id="browseBtn" style="width:100%;margin-top:8px;">章から探す（全ジャンル）</button>
     <div class="field-note" style="margin-top:3px;">HSの全99章の階層ツリーから任意のコードを辿れます。</div>
+
+    <div class="field-note" style="margin-top:10px;">
+      <button class="link-btn" id="tscaManualLink">TSCA証明書を手動で作成</button>
+    </div>
 
     <div class="section-label" style="margin-top:14px;">前回の作業を復元する</div>
     <button class="btn btn-ghost btn-sm" id="restoreBtn" style="width:100%;">前回の入力を復元</button>
@@ -86,10 +90,30 @@
         <label for="nameAndTitle">Name and Title <span class="required">*</span></label>
         <input type="text" id="nameAndTitle" placeholder="例: Naoki Jodan, Export Manager">
       </div>
+
+      <div class="section-label" style="margin-top:16px;">TSCA証明書・書類用の署名者（Certifier）情報</div>
+      <div class="field-note" style="margin-top:-2px;margin-bottom:8px;">ここに保存した内容は、TSCA証明書フォームのCertifier欄に自動で入力されます（すべて任意）。</div>
       <div class="form-group">
-        <label for="email">E-mail <span class="required">*</span></label>
+        <label for="certifierName">Certifier name（氏名）</label>
+        <input type="text" id="certifierName" placeholder="例: Naoki Jodan">
+      </div>
+      <div class="form-group">
+        <label for="email">Certifier email（メール）</label>
         <input type="email" id="email" placeholder="例: export@example.com">
       </div>
+      <div class="form-group">
+        <label for="companyPhone">Certifier phone（電話）</label>
+        <input type="text" id="companyPhone" placeholder="例: +81 90-1234-5678">
+      </div>
+      <div class="form-group">
+        <label for="companyAddress">Company address（会社住所・任意）</label>
+        <input type="text" id="companyAddress" placeholder="例: 1-2-3 Shibuya, Tokyo, Japan">
+      </div>
+      <div class="form-group">
+        <label for="certifierTitle">Certifier title（肩書き・任意）</label>
+        <input type="text" id="certifierTitle" placeholder="例: Export Manager">
+      </div>
+
       <div class="section-label" style="margin-top:16px;">OpenAI API設定（AI利用機能）</div>
       <div class="form-group">
         <label for="openaiKey">APIキー</label>
@@ -379,6 +403,135 @@
     <div id="cpscResultContent"></div>
   </div>
 
+  <!-- ========== セクション: TSCA証明書（FedEx） ========== -->
+  <div id="sectionTsca" class="section" style="display:none;">
+    <div class="panel-header">
+      <h1>TSCA証明書を作る（FedEx）</h1>
+      <button class="link-btn" id="backFromTsca">← ホームへ</button>
+    </div>
+
+    <div class="disclaimer">
+      このツールはFedExのTSCA証明書PDFの様式に入力内容を焼き付けて生成するものです。
+      記載内容の正確性・提出の要否についての最終判断は輸出者ご本人の責任で行ってください。
+    </div>
+
+    <!-- Sub b: 記入フォーム -->
+    <div id="tscaSubForm" class="tsca-sub" style="display:none;">
+      <div id="tscaTemplateBar" class="tsca-template-bar">
+        <div id="tscaTemplateStatusText" class="message success" style="display:block;"></div>
+        <div class="field-note" style="margin:6px 0 6px;">
+          様式PDFはこの拡張機能に同梱されています。別バージョンの様式を使いたい場合はここから差し替えできます（この端末（chrome.storage.local）にのみ保存され、外部には送信されません）。
+        </div>
+        <input type="file" id="tscaFileInput" accept="application/pdf">
+        <button class="btn btn-ghost btn-sm" id="tscaResetTemplateBtn" style="display:none;margin-top:6px;">同梱の様式に戻す</button>
+        <div id="tscaUploadMsg" class="message" style="display:none;margin-top:8px;"></div>
+      </div>
+
+      <div id="tscaSettingsHint" class="field-note" style="display:none;margin-bottom:10px;">
+        ⚙ <button type="button" class="link-btn" id="tscaSettingsHintLink">設定でCertifier情報を保存しておくと自動入力されます</button>
+      </div>
+
+      <div class="section-label">基本情報</div>
+      <div class="form-group">
+        <label for="tscaDate">Date（発送日・米国式）</label>
+        <input type="text" id="tscaDate" placeholder="MM/DD/YYYY">
+      </div>
+      <div class="form-group">
+        <label for="tscaWaybill">FedEx Waybill番号（12桁・任意）</label>
+        <input type="text" id="tscaWaybill" placeholder="例: 874297801136（未入力可）" maxlength="12" inputmode="numeric">
+        <div class="field-note">入力する場合は半角数字12桁で入力してください。未入力のまま進めると、PDFのWaybill欄は空欄になります（後で手書きできます）。</div>
+      </div>
+
+      <div class="section-label" style="margin-top:14px;">証明区分</div>
+      <div class="tsca-cert-choice">
+        <label class="tsca-radio-label">
+          <input type="radio" name="tscaCertType" id="tscaCertNegative" value="negative" checked>
+          <span><strong>Negative Certification</strong>（既定・一般商品向け）</span>
+        </label>
+        <div class="field-note tsca-radio-note">
+          この出荷物の化学物質はTSCA（有害物質規制法）の規制対象ではないことを証明します。玩具・紙製品など通常の完成品はこちらが該当します。
+        </div>
+        <label class="tsca-radio-label">
+          <input type="radio" name="tscaCertType" id="tscaCertPositive" value="positive">
+          <span><strong>Positive Certification</strong></span>
+        </label>
+        <div class="field-note tsca-radio-note">
+          この出荷物の化学物質がTSCAの規則等に適合していることを証明します（該当する場合のみ選択してください）。
+        </div>
+      </div>
+
+      <div class="section-label" style="margin-top:14px;">Certifier情報</div>
+      <div class="form-group">
+        <label for="tscaCertifierName">Certifier name</label>
+        <input type="text" id="tscaCertifierName">
+      </div>
+      <div class="form-group">
+        <label for="tscaCertifierPhone">Certifier phone</label>
+        <input type="text" id="tscaCertifierPhone">
+      </div>
+      <div class="form-group">
+        <label for="tscaCertifierEmail">Certifier email</label>
+        <input type="email" id="tscaCertifierEmail">
+      </div>
+
+      <div class="section-label" style="margin-top:14px;">商品説明（英語）</div>
+      <div id="tscaAiResultBadge" class="ai-badge" style="display:none;">✨ <strong>AI入力補助</strong> — 内容を確認・修正してから進んでください</div>
+      <div class="form-group">
+        <textarea id="tscaProductDesc" rows="3" maxlength="450" placeholder="例: Used board game (Hobby Japan)"></textarea>
+        <div class="field-note">長い場合は自動的に複数行（様式の1.〜7.）に分けて記載されます。7行（英語で約400〜450文字）を超える説明は入りません。</div>
+        <div class="field-note">素材構成（PVC・ABS等）が説明に入っているか確認してください。FedExから商品の素材構成を聞かれることがあります。</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="tscaAiDescBtn">✨ AIで英語説明を生成</button>
+      <div id="tscaAiMsg" class="message" style="display:none;"></div>
+      <div class="field-note">AIに送信されるのは商品ページの内容のみです。氏名・連絡先・送り状番号などの個人情報は送信されず、PDF作成はすべてこの端末内で完結します。</div>
+
+      <div class="section-label" style="margin-top:14px;">会社情報（任意）</div>
+      <div class="form-group">
+        <label for="tscaCompanyName">Company name</label>
+        <input type="text" id="tscaCompanyName">
+      </div>
+      <div class="form-group">
+        <label for="tscaCompanyAddress">Company address</label>
+        <input type="text" id="tscaCompanyAddress">
+      </div>
+      <div class="form-group">
+        <label for="tscaCertifierTitle">Certifier title</label>
+        <input type="text" id="tscaCertifierTitle">
+      </div>
+
+      <button class="btn btn-primary" id="tscaGoToConfirmBtn" style="margin-top:10px;">確認画面へ進む →</button>
+    </div>
+
+    <!-- Sub d: 確認画面 -->
+    <div id="tscaSubConfirm" class="tsca-sub" style="display:none;">
+      <div class="section-label">記入内容の確認</div>
+      <table class="tsca-confirm-table" id="tscaConfirmTable"></table>
+
+      <label class="tsca-confirm-check">
+        <input type="checkbox" id="tscaConfirmCheck">
+        内容を確認しました
+      </label>
+
+      <button class="btn btn-success" id="tscaGenerateBtn" style="margin-top:10px;width:100%;" disabled>PDFを生成してダウンロード</button>
+      <button class="btn btn-ghost btn-sm" id="tscaBackToFormBtn" style="margin-top:8px;">← 記入内容を修正</button>
+    </div>
+
+    <!-- Sub f: 完了・提出案内 -->
+    <div id="tscaSubDone" class="tsca-sub" style="display:none;">
+      <div class="message success" style="display:block;" id="tscaDoneMsg"></div>
+      <div class="section-label">提出方法</div>
+      <ul class="tsca-submit-list">
+        <li>発送書類に同封する</li>
+        <li>paperwork@fedex.com へメールで送付する（件名にAWB番号を記載してください）</li>
+      </ul>
+      <div class="disclaimer" style="margin-top:10px;">
+        生成されたPDFの内容は必ずご自身で見直してください。最終的な提出判断は輸出者ご本人の責任です。
+      </div>
+      <button class="btn btn-ghost btn-sm" id="tscaStartOverBtn" style="margin-top:8px;">最初からやり直す</button>
+    </div>
+  </div>
+
+  <script src="vendor/pdf-lib.min.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>

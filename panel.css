@@ -246,6 +246,14 @@ select:focus {
 }
 .btn-ghost:hover { background: #bdbdbd; }
 
+.btn-danger {
+  background: #d93025;
+  color: white;
+  width: 100%;
+}
+.btn-danger:hover:not(:disabled) { background: #b3261e; }
+.btn-danger:disabled { background: #bdbdbd; cursor: not-allowed; }
+
 .btn-sm {
   padding: 6px 12px;
   font-size: 12px;
@@ -922,4 +930,94 @@ select:focus {
     color: #64b5f6;
     border-top-color: #2a4a6a;
   }
+}
+
+/* ===========================================
+   TSCA証明書（FedEx）機能
+   =========================================== */
+.tsca-sub + .tsca-sub {
+  margin-top: 4px;
+}
+
+.tsca-template-bar {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+
+.tsca-cert-choice {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 4px;
+}
+
+.tsca-radio-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: normal;
+  color: #333;
+  margin-bottom: 2px;
+  cursor: pointer;
+}
+.tsca-radio-label input[type="radio"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.tsca-radio-note {
+  margin: 2px 0 10px 24px;
+}
+
+.tsca-confirm-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 11px;
+  margin-bottom: 12px;
+}
+.tsca-confirm-table td {
+  border: 1px solid #ddd;
+  padding: 6px 8px;
+  vertical-align: top;
+}
+.tsca-confirm-label {
+  background: #E7E6E6;
+  font-weight: bold;
+  color: #333;
+  width: 38%;
+  white-space: normal;
+  word-break: break-word;
+}
+.tsca-confirm-value {
+  background: #fff;
+  color: #222;
+  word-break: break-word;
+  white-space: pre-wrap; /* 商品説明の明示的な改行（Materials:箇条書き）をそのまま表示 */
+}
+
+.tsca-confirm-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: bold;
+  color: #333;
+  background: #FFF8E1;
+  border: 1px solid #F9A825;
+  border-radius: 4px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.tsca-submit-list {
+  margin: 0 0 10px 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #333;
+  line-height: 1.8;
 }

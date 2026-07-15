@@ -45,7 +45,7 @@ var state = {
   confirmDone: false,
 
   // 会社情報
-  company: { name: '', nameTitle: '', email: '' },
+  company: { name: '', nameTitle: '', email: '', phone: '', certifierName: '', address: '', certifierTitle: '' },
 
   // ブラウズ
   browseChapter: null,     // 現在開いている章 { chapter, title, count }
@@ -55,6 +55,13 @@ var state = {
   cpsc: null,    // cpsc_efiling_hts.json の内容
   cpscWiz: null, // CPSC判定ウィザード状態
   openaiKey: '',
+
+  // TSCA証明書（FedEx）機能（v1.3.0）
+  tsca: {
+    templateLoaded: false,
+    pageCount: null,
+    form: null   // 確認画面へ進んだ時点のスナップショット
+  },
 };
 
 // -------------------------------------------------------
@@ -63,7 +70,7 @@ var state = {
 function showSection(id) {
   var sections = ['sectionHome', 'sectionBrowse', 'sectionSettings', 'sectionWizard',
                   'sectionResult', 'sectionConfirm', 'sectionPrint',
-                  'sectionCpscWiz', 'sectionCpscResult'];
+                  'sectionCpscWiz', 'sectionCpscResult', 'sectionTsca'];
   sections.forEach(function(sid) {
     var el = document.getElementById(sid);
     if (el) el.style.display = (sid === id) ? '' : 'none';
@@ -1781,7 +1788,23 @@ function loadSettings() {
         document.getElementById('companyName').value  = state.company.name || '';
         document.getElementById('nameAndTitle').value = state.company.nameTitle || '';
         document.getElementById('email').value        = state.company.email || '';
+        var phoneEl = document.getElementById('companyPhone');
+        if (phoneEl) phoneEl.value = state.company.phone || '';
       } catch(e) {}
+    }
+    var certifierNameEl = document.getElementById('certifierName');
+    if (certifierNameEl) {
+      // 保存済みのcertifierNameがあればそれを、なければName and Titleの氏名部分を初期値として流用（保存はしない）
+      certifierNameEl.value = state.company.certifierName ||
+        tscaSplitNameTitle(state.company.nameTitle).name || '';
+    }
+    var addressEl = document.getElementById('companyAddress');
+    if (addressEl) addressEl.value = state.company.address || '';
+    var certifierTitleEl = document.getElementById('certifierTitle');
+    if (certifierTitleEl) {
+      // 保存済みのcertifierTitleがあればそれを、なければName and Titleの肩書き部分を初期値として提示（保存はしない）
+      certifierTitleEl.value = state.company.certifierTitle ||
+        tscaSplitNameTitle(state.company.nameTitle).title || '';
     }
     if (stored._hsOpenAiKey) {
       state.openaiKey = stored._hsOpenAiKey;
@@ -1796,6 +1819,14 @@ function saveSettings(e) {
   state.company.name      = document.getElementById('companyName').value.trim();
   state.company.nameTitle = document.getElementById('nameAndTitle').value.trim();
   state.company.email     = document.getElementById('email').value.trim();
+  var companyPhoneEl = document.getElementById('companyPhone');
+  state.company.phone     = companyPhoneEl ? companyPhoneEl.value.trim() : (state.company.phone || '');
+  var certifierNameEl = document.getElementById('certifierName');
+  state.company.certifierName = certifierNameEl ? certifierNameEl.value.trim() : (state.company.certifierName || '');
+  var addressEl = document.getElementById('companyAddress');
+  state.company.address = addressEl ? addressEl.value.trim() : (state.company.address || '');
+  var certifierTitleEl = document.getElementById('certifierTitle');
+  state.company.certifierTitle = certifierTitleEl ? certifierTitleEl.value.trim() : (state.company.certifierTitle || '');
   var keyEl = document.getElementById('openaiKey');
   if (keyEl) state.openaiKey = keyEl.value.trim();
   var toSave = { _hsCompany: JSON.stringify(state.company) };
@@ -1951,6 +1982,7 @@ window.addEventListener('load', function() {
 
   // ---- AI解析 ----
   document.getElementById('aiAnalyzeBtn').addEventListener('click', startAiFlow);
+  document.getElementById('tscaAiBtn').addEventListener('click', startTscaAiFlow);
 
   // 初期表示
   showSection('sectionHome');
@@ -2202,3 +2234,749 @@ function showResultFromAi(aiData) {
     badge.style.display = '';
   }
 }
+
+// -------------------------------------------------------
+// ホーム: AIでTSCA書類を作成する（開いているページ→TSCA商品説明を自動生成）
+// -------------------------------------------------------
+
+/** TSCAフォーム内のAI入力補助バッジの表示切り替え */
+function showTscaAiResultBadge(show) {
+  var el = document.getElementById('tscaAiResultBadge');
+  if (el) el.style.display = show ? '' : 'none';
+}
+
+/** ホームの赤ボタン: 開いているページをAIで分析し、TSCA用の英語商品説明を生成してTSCAフォームを開く */
+function startTscaAiFlow() {
+  var msg = document.getElementById('tscaAiHomeMsg');
+  var btn = document.getElementById('tscaAiBtn');
+
+  if (!state.openaiKey) {
+    showMessage(msg, 'error', 'APIキーが未設定です。設定画面で OpenAI APIキーを入力してください。');
+    msg.style.display = '';
+    return;
+  }
+
+  btn.disabled = true;
+  showMessage(msg, 'info', '分析中…');
+  msg.style.display = '';
+
+  getPageInfo(function(pageInfo, errReason) {
+    if (!pageInfo) {
+      btn.disabled = false;
+      msg.style.display = 'none';
+      openTscaSection();
+      var aiMsg1 = document.getElementById('tscaAiMsg');
+      showMessage(aiMsg1, 'error', (errReason || 'ページ情報を取得できませんでした') + '。商品説明は手動で入力してください。');
+      return;
+    }
+    callTscaDescriptionAi(pageInfo, function(err, description) {
+      btn.disabled = false;
+      msg.style.display = 'none';
+      openTscaSection();
+      if (err || !description) {
+        var aiMsg2 = document.getElementById('tscaAiMsg');
+        showMessage(aiMsg2, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '不明なエラー') + '。商品説明は手動で入力してください。');
+        return;
+      }
+      document.getElementById('tscaProductDesc').value = description;
+      showTscaAiResultBadge(true);
+    });
+  });
+}
+
+/** 開いているページの情報からTSCA用の英語商品説明（1〜2文・誇張なし・最大350文字）を生成する */
+function callTscaDescriptionAi(pageInfo, cb) {
+  var lines = [
+    'Product URL: ' + pageInfo.url,
+    'Product name: ' + (pageInfo.productName || '')
+  ];
+  if (pageInfo.brand)       lines.push('Brand: ' + pageInfo.brand);
+  if (pageInfo.condition)   lines.push('Condition: ' + pageInfo.condition);
+  if (pageInfo.category)    lines.push('Category on site: ' + pageInfo.category);
+  if (pageInfo.description) lines.push('Description: ' + pageInfo.description);
+
+  var userContent = lines.join('\n');
+
+  var systemPrompt = [
+    'You are helping prepare a US customs document (FedEx TSCA certification) for a shipment',
+    'of a used/secondhand consumer good exported from Japan to the US.',
+    'Given the product page information below, write a concise English product description',
+    'for the "Product description" field of the customs form.',
+    'Factual, no exaggeration, no marketing or promotional language. Maximum 350 characters total.',
+    'ALWAYS include the material composition of the product as a bullet list, because FedEx may ask about materials.',
+    'Output format (use explicit line breaks exactly like this, nothing else):',
+    '<one factual sentence: item type, product name in quotes, brand, and condition (new/used)>',
+    'Materials:',
+    '- <material name (full chemical name in parentheses if applicable)>: approx. <percent>%',
+    '- <material name>: approx. <percent>%',
+    'Material rules:',
+    '- If the page information states materials (素材, 材質, "Material", etc.), use them, translated into standard English material names. This takes priority.',
+    '- Otherwise use the industry-standard composition for the product category (e.g. painted finished figures = PVC approx. 90% / ABS approx. 10%; trading cards and board games = paper and cardboard; plush toys = polyester fabric and stuffing).',
+    '- Give each material an approximate percentage prefixed with "approx.", adding up to roughly 100%.',
+    '- Write a percentage WITHOUT "approx." only when that exact figure is explicitly stated in the page information.',
+    '- List at most 4 materials (the form has only 7 writing lines in total).',
+    'Example output:',
+    'Painted finished figure set "Gundam RX-78-2" by Bandai, used.',
+    'Materials:',
+    '- PVC (polyvinyl chloride): approx. 90%',
+    '- ABS (acrylonitrile butadiene styrene): approx. 10%',
+    'Return ONLY the description text. No quotes around the whole text, no markdown, no explanation.'
+  ].join('\n');
+
+  fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + state.openaiKey
+    },
+    body: JSON.stringify({
+      model: 'gpt-5.4',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent }
+      ],
+      max_completion_tokens: 250
+    })
+  })
+  .then(function(r) {
+    if (!r.ok) {
+      return r.json().then(function(errBody) {
+        throw new Error((errBody.error && errBody.error.message) || ('HTTP ' + r.status));
+      });
+    }
+    return r.json();
+  })
+  .then(function(data) {
+    var content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!content) throw new Error('AIからの応答が空でした');
+    content = content.trim().replace(/^["']|["']$/g, '');
+    cb(null, content);
+  })
+  .catch(function(e) {
+    cb(e, null);
+  });
+}
+
+// -------------------------------------------------------
+// TSCA証明書（FedEx）機能（v1.3.0）
+// 様式PDF（ユーザー提供）の2ページ目（単発発送用）に、
+// AcroFormを使わずHelveticaテキスト＋ポリライン(チェックマーク)を
+// 直接焼き付けてフラット化したPDFを生成する。
+// -------------------------------------------------------
+
+/** 様式PDF（612x792pt, USレター）の2ページ目における各項目の座標。
+ *  本日実際にFedExへ提出したPDF(TSCA_874297801136.pdf)をpdfplumberで
+ *  実測して得た値（PDF標準の左下原点・pt単位）。 */
+var TSCA_TEMPLATE_PAGE_INDEX = 1; // 3ページ構成の様式の2ページ目（単発発送用）
+var TSCA_FONT_SIZE = 10;
+var TSCA_DESC_MAX_WIDTH = 280; // 商品説明欄の実用幅(pt)
+
+var TSCA_COORD = {
+  date:           { x: 104.0, y: 690.9 },
+  waybill:        { x: 307.0, y: 666.9 },
+  companyName:    { x: 220.0, y: 507.96 },
+  companyAddress: { x: 220.0, y: 484.92 },
+  certifierName:  { x: 220.0, y: 461.9 },
+  certifierTitle: { x: 220.0, y: 438.96 },
+  certifierPhone: { x: 220.0, y: 415.9 },
+  certifierEmail: { x: 220.0, y: 392.9 },
+  signature:      { x: 220.0, y: 369.9 },
+  descRows: [
+    { x: 87.0, y: 323.9 },
+    { x: 87.0, y: 300.84 },
+    { x: 87.0, y: 277.92 },
+    { x: 87.0, y: 254.88 },
+    { x: 87.0, y: 231.84 },
+    { x: 87.0, y: 208.92 },
+    { x: 87.0, y: 185.88 }
+  ]
+};
+
+/** Positive/Negative Certification チェックボックスの左下座標（AcroFormウィジェット実測値） */
+var TSCA_CHECKBOX = {
+  positive: { x0: 67.9464, y0: 619.411 },
+  negative: { x0: 67.948,  y0: 527.526 }
+};
+
+/** チェックマーク（✓）のポリライン。ボックス左下からの相対オフセット。
+ *  実際に手描きでチェックされたPDFのベクター線を実測して得た形状。 */
+var TSCA_CHECK_OFFSETS = [
+  { dx: 3.552,  dy: 9.974 },
+  { dx: 7.552,  dy: 4.474 },
+  { dx: 15.052, dy: 15.474 }
+];
+
+// ---- base64 <-> ArrayBuffer ヘルパー ----
+function tscaArrayBufferToBase64(buffer) {
+  var bytes = new Uint8Array(buffer);
+  var chunkSize = 0x8000;
+  var chunks = [];
+  for (var i = 0; i < bytes.length; i += chunkSize) {
+    chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize)));
+  }
+  return btoa(chunks.join(''));
+}
+
+function tscaBase64ToUint8Array(base64) {
+  var binary = atob(base64);
+  var len = binary.length;
+  var bytes = new Uint8Array(len);
+  for (var i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function tscaFormatDateMMDDYYYY(d) {
+  var mm = d.getMonth() + 1;
+  var dd = d.getDate();
+  return (mm < 10 ? '0' + mm : String(mm)) + '/' + (dd < 10 ? '0' + dd : String(dd)) + '/' + d.getFullYear();
+}
+
+/** ファイル名用の生成日（YYYYMMDD）。Waybill番号が未入力の場合のファイル名に使う。 */
+function tscaFormatDateYYYYMMDD(d) {
+  var mm = d.getMonth() + 1;
+  var dd = d.getDate();
+  return String(d.getFullYear()) + (mm < 10 ? '0' + mm : String(mm)) + (dd < 10 ? '0' + dd : String(dd));
+}
+
+/** サブビュー切り替え（#sectionTsca 内の .tsca-sub 要素のみ対象） */
+function showTscaSub(id) {
+  document.querySelectorAll('.tsca-sub').forEach(function(el) {
+    el.style.display = (el.id === id) ? '' : 'none';
+  });
+}
+
+/** 会社情報設定の「Name and Title」から氏名部分だけを取り出す（カンマ区切り想定） */
+function tscaSplitNameTitle(nameTitle) {
+  var s = (nameTitle || '').trim();
+  var idx = s.indexOf(',');
+  if (idx === -1) return { name: s, title: '' };
+  return { name: s.substring(0, idx).trim(), title: s.substring(idx + 1).trim() };
+}
+
+/** #sectionTsca を開く。様式PDF（差し替え済みならそれ、なければ同梱の様式）で記入フォームへ直接進む。 */
+function openTscaSection() {
+  showSection('sectionTsca');
+  tscaEnterForm();
+}
+
+/** 様式PDFの状態表示（差し替え済み／同梱）と差し替えリセットボタンの表示を更新する */
+function tscaUpdateTemplateStatus() {
+  chrome.storage.local.get(['_hsTscaTemplatePdf'], function(stored) {
+    var hasCustom = !!stored._hsTscaTemplatePdf;
+    state.tsca.templateLoaded = hasCustom;
+    var statusEl = document.getElementById('tscaTemplateStatusText');
+    var resetBtn = document.getElementById('tscaResetTemplateBtn');
+    if (statusEl) {
+      statusEl.textContent = hasCustom
+        ? '差し替えた様式を使用中です。'
+        : '同梱の様式（FedEx TSCA Certification）を使用中です。';
+    }
+    if (resetBtn) resetBtn.style.display = hasCustom ? '' : 'none';
+  });
+}
+
+/** 様式PDFのバイト列を取得する。差し替え済みならchrome.storage.localから、
+ *  なければ同梱の data/tsca_template.pdf を fetch(chrome.runtime.getURL(...)) で読み込む
+ *  （拡張機能内のローカルファイル読み込みであり、外部通信ではない）。
+ *  callback(bytes) または失敗時 callback(null, err) を呼ぶ。 */
+function tscaGetTemplateBytes(callback) {
+  chrome.storage.local.get(['_hsTscaTemplatePdf'], function(stored) {
+    if (stored._hsTscaTemplatePdf) {
+      callback(tscaBase64ToUint8Array(stored._hsTscaTemplatePdf));
+      return;
+    }
+    fetch(chrome.runtime.getURL('data/tsca_template.pdf'))
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.arrayBuffer();
+      })
+      .then(function(buf) { callback(new Uint8Array(buf)); })
+      .catch(function(err) { callback(null, err); });
+  });
+}
+
+/** ファイル選択時（差し替え）: PDFを読み込み、base64でローカル保存。ページ数を軽く検証（警告のみ）。 */
+function tscaHandleFileSelect(file) {
+  var msgEl = document.getElementById('tscaUploadMsg');
+  if (!file) return;
+  if (file.type && file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name || '')) {
+    showMessage(msgEl, 'error', 'PDFファイルを選択してください。');
+    return;
+  }
+  showMessage(msgEl, 'info', '読み込み中…');
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var arrayBuffer = e.target.result;
+    var base64 = tscaArrayBufferToBase64(arrayBuffer);
+
+    if (typeof PDFLib === 'undefined') {
+      showMessage(msgEl, 'error', 'PDF処理ライブラリの読み込みに失敗しました。拡張機能を再読み込みしてください。');
+      return;
+    }
+
+    PDFLib.PDFDocument.load(arrayBuffer).then(function(doc) {
+      var pageCount = doc.getPageCount();
+      chrome.storage.local.set({ _hsTscaTemplatePdf: base64, _hsTscaPageCount: pageCount }, function() {
+        state.tsca.templateLoaded = true;
+        state.tsca.pageCount = pageCount;
+        if (pageCount !== 3) {
+          showMessage(msgEl, 'warn',
+            '差し替えました。ただしページ数が想定（3ページ）と異なります（' + pageCount + 'ページ）。' +
+            '様式が違う可能性がありますが、このまま続行できます。2ページ目が単発発送用の様式であることをご確認ください。' +
+            '文字の位置がずれる可能性があります。');
+        } else {
+          showMessage(msgEl, 'success', '差し替えた様式PDFを読み込みました（3ページ構成を確認しました）。');
+        }
+        tscaUpdateTemplateStatus();
+      });
+    }).catch(function(err) {
+      showMessage(msgEl, 'error', 'PDFの読み込みに失敗しました: ' + (err && err.message ? err.message : String(err)));
+    });
+  };
+  reader.onerror = function() {
+    showMessage(msgEl, 'error', 'ファイルの読み込みに失敗しました。');
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/** 差し替えた様式PDFを削除し、同梱の様式に戻す */
+function tscaResetTemplate() {
+  chrome.storage.local.remove(['_hsTscaTemplatePdf', '_hsTscaPageCount'], function() {
+    state.tsca.templateLoaded = false;
+    state.tsca.pageCount = null;
+    document.getElementById('tscaFileInput').value = '';
+    var msgEl = document.getElementById('tscaUploadMsg');
+    msgEl.style.display = 'none';
+    tscaUpdateTemplateStatus();
+  });
+}
+
+/** 記入フォーム表示。既定値・会社情報設定からのプリフィルを行う。 */
+function tscaEnterForm() {
+  tscaUpdateTemplateStatus();
+  document.getElementById('tscaDate').value = tscaFormatDateMMDDYYYY(new Date());
+  document.getElementById('tscaWaybill').value = '';
+  document.getElementById('tscaCertNegative').checked = true;
+  document.getElementById('tscaCertPositive').checked = false;
+
+  var nt = tscaSplitNameTitle(state.company.nameTitle);
+  document.getElementById('tscaCertifierName').value  = state.company.certifierName || nt.name || '';
+  document.getElementById('tscaCertifierTitle').value = state.company.certifierTitle || nt.title || '';
+  document.getElementById('tscaCertifierPhone').value = state.company.phone || '';
+  document.getElementById('tscaCertifierEmail').value = state.company.email || '';
+  document.getElementById('tscaCompanyName').value    = state.company.name || '';
+  document.getElementById('tscaCompanyAddress').value = state.company.address || '';
+  document.getElementById('tscaProductDesc').value    = '';
+
+  var aiMsg = document.getElementById('tscaAiMsg');
+  if (aiMsg) aiMsg.style.display = 'none';
+  showTscaAiResultBadge(false);
+
+  // 設定にCertifier情報が何も保存されていなければ、設定画面への案内を表示
+  var hintEl = document.getElementById('tscaSettingsHint');
+  if (hintEl) {
+    var hasCertifierInfo = !!(state.company.certifierName || state.company.phone || state.company.email);
+    hintEl.style.display = hasCertifierInfo ? 'none' : '';
+  }
+
+  showTscaSub('tscaSubForm');
+}
+
+/** AIで英語の商品説明を生成（既存のOpenAI利用パターンを踏襲） */
+function tscaGenerateDescription() {
+  var msgEl = document.getElementById('tscaAiMsg');
+  var btn = document.getElementById('tscaAiDescBtn');
+  var textEl = document.getElementById('tscaProductDesc');
+
+  if (!state.openaiKey) {
+    showMessage(msgEl, 'error', 'APIキーが未設定です。設定画面で OpenAI APIキーを入力してください。');
+    return;
+  }
+  var source = textEl.value.trim();
+  if (!source) {
+    showMessage(msgEl, 'error', '商品名など、元になる情報を先に入力してください（日本語可）。');
+    return;
+  }
+
+  btn.disabled = true;
+  showMessage(msgEl, 'info', '生成中…');
+
+  var systemPrompt = [
+    'You are helping prepare a FedEx TSCA (Toxic Substances Control Act) certification form',
+    'for a shipment of used/secondhand consumer goods exported from Japan to the US.',
+    'Given a short Japanese or English product name/description, write ONE concise English',
+    'product description suitable for the "Product description" field of the form.',
+    'Keep it factual and short. No marketing language. Maximum 350 characters total.',
+    'Mention the item type and condition (e.g. "Used") when relevant.',
+    'ALWAYS include the material composition of the product as a bullet list, because FedEx may ask about materials.',
+    'Output format (use explicit line breaks exactly like this, nothing else):',
+    '<one factual sentence: item type, product name in quotes, brand, and condition (new/used)>',
+    'Materials:',
+    '- <material name (full chemical name in parentheses if applicable)>: approx. <percent>%',
+    '- <material name>: approx. <percent>%',
+    'Material rules:',
+    '- If the given text states materials (素材, 材質, "Material", etc.), use them, translated into standard English material names. This takes priority.',
+    '- Otherwise use the industry-standard composition for the product category (e.g. painted finished figures = PVC approx. 90% / ABS approx. 10%; trading cards and board games = paper and cardboard; plush toys = polyester fabric and stuffing).',
+    '- Give each material an approximate percentage prefixed with "approx.", adding up to roughly 100%.',
+    '- Write a percentage WITHOUT "approx." only when that exact figure is explicitly stated in the given text.',
+    '- List at most 4 materials (the form has only 7 writing lines in total).',
+    'Example output:',
+    'Painted finished figure set "Gundam RX-78-2" by Bandai, used.',
+    'Materials:',
+    '- PVC (polyvinyl chloride): approx. 90%',
+    '- ABS (acrylonitrile butadiene styrene): approx. 10%',
+    'Return ONLY the description text. No quotes around the whole text, no markdown, no explanation.'
+  ].join('\n');
+
+  fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + state.openaiKey
+    },
+    body: JSON.stringify({
+      model: 'gpt-5.4',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: source }
+      ],
+      max_completion_tokens: 250
+    })
+  })
+  .then(function(r) {
+    if (!r.ok) {
+      return r.json().then(function(errBody) {
+        throw new Error((errBody.error && errBody.error.message) || ('HTTP ' + r.status));
+      });
+    }
+    return r.json();
+  })
+  .then(function(data) {
+    var content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!content) throw new Error('AIからの応答が空でした');
+    content = content.trim().replace(/^["']|["']$/g, '');
+    textEl.value = content;
+    msgEl.style.display = 'none';
+  })
+  .catch(function(e) {
+    showMessage(msgEl, 'error', 'AI呼び出しに失敗しました: ' + e.message);
+  })
+  .finally(function() {
+    btn.disabled = false;
+  });
+}
+
+/** 記入フォーム → 確認画面（商品説明が7行に収まるかを確認してから進む） */
+function tscaGoToConfirm() {
+  var waybill = document.getElementById('tscaWaybill').value.replace(/[^0-9]/g, '');
+  // Waybill番号は任意入力。入力されている場合のみ12桁の数字であることを検証する。
+  if (waybill.length !== 0 && waybill.length !== 12) {
+    alert('Waybill番号は12桁の数字で入力してください（現在 ' + waybill.length + '桁）。未入力のままでも進められます。');
+    return;
+  }
+  document.getElementById('tscaWaybill').value = waybill;
+
+  var certType = document.getElementById('tscaCertPositive').checked ? 'positive' : 'negative';
+
+  var f = {
+    date:            document.getElementById('tscaDate').value.trim(),
+    waybill:         waybill,
+    certType:        certType,
+    certifierName:   document.getElementById('tscaCertifierName').value.trim(),
+    certifierPhone:  document.getElementById('tscaCertifierPhone').value.trim(),
+    certifierEmail:  document.getElementById('tscaCertifierEmail').value.trim(),
+    // 明示的な改行（Materials:箇条書き等）は保持し、行内の連続空白のみ正規化する
+    productDesc:     document.getElementById('tscaProductDesc').value
+                       .split(/\r?\n/)
+                       .map(function(s) { return s.replace(/\s+/g, ' ').trim(); })
+                       .filter(function(s) { return s; })
+                       .join('\n'),
+    companyName:     document.getElementById('tscaCompanyName').value.trim(),
+    companyAddress:  document.getElementById('tscaCompanyAddress').value.trim(),
+    certifierTitle:  document.getElementById('tscaCertifierTitle').value.trim()
+  };
+
+  if (!f.certifierName) {
+    alert('Certifier name を入力してください。');
+    return;
+  }
+  if (!f.productDesc) {
+    alert('商品説明を入力してください。');
+    return;
+  }
+  if (typeof PDFLib === 'undefined') {
+    alert('PDF処理ライブラリの読み込みに失敗しました。拡張機能を再読み込みしてください。');
+    return;
+  }
+
+  PDFLib.PDFDocument.create().then(function(tmpDoc) {
+    return tmpDoc.embedFont(PDFLib.StandardFonts.Helvetica);
+  }).then(function(helv) {
+    var wrap = tscaWrapDescription(helv, f.productDesc, TSCA_DESC_MAX_WIDTH, TSCA_COORD.descRows.length);
+    if (wrap.overflow) {
+      alert('商品説明が長すぎます。' + TSCA_COORD.descRows.length + '行に収まるよう短くしてください（現在' + wrap.lineCount + '行相当）。');
+      return;
+    }
+    tscaProceedToConfirm(f);
+  }).catch(function(err) {
+    console.error('TSCA description wrap check error', err);
+    alert('商品説明のチェックに失敗しました: ' + (err && err.message ? err.message : String(err)));
+  });
+}
+
+/** 商品説明の行数チェック通過後、確認画面を構築して表示する */
+function tscaProceedToConfirm(f) {
+  state.tsca.form = f;
+
+  var rows = [
+    ['Date', f.date || '(未入力)'],
+    ['Waybill番号', f.waybill || '（未入力・後で手書き）'],
+    ['証明区分', f.certType === 'positive' ? 'Positive Certification' : 'Negative Certification'],
+    ['Certifier name', f.certifierName],
+    ['Certifier phone', f.certifierPhone || '(未入力)'],
+    ['Certifier email', f.certifierEmail || '(未入力)'],
+    ['商品説明', f.productDesc],
+    ['Company name', f.companyName || '(未入力・任意)'],
+    ['Company address', f.companyAddress || '(未入力・任意)'],
+    ['Certifier title', f.certifierTitle || '(未入力・任意)']
+  ];
+  var table = document.getElementById('tscaConfirmTable');
+  table.innerHTML = '';
+  rows.forEach(function(r) {
+    var tr = document.createElement('tr');
+    var tdL = document.createElement('td');
+    tdL.className = 'tsca-confirm-label';
+    tdL.textContent = r[0];
+    var tdV = document.createElement('td');
+    tdV.className = 'tsca-confirm-value';
+    tdV.textContent = r[1];
+    tr.appendChild(tdL);
+    tr.appendChild(tdV);
+    table.appendChild(tr);
+  });
+
+  var checkEl = document.getElementById('tscaConfirmCheck');
+  checkEl.checked = false;
+  document.getElementById('tscaGenerateBtn').disabled = true;
+
+  showTscaSub('tscaSubConfirm');
+}
+
+/** Helveticaフォントで商品説明を欄の幅に収まるよう複数行に折り返す（最大7行＝様式の1.〜7.）。
+ *  明示的な改行(\n)は尊重する: まず\nで分割し、各セグメントを幅で折り返す
+ *  （Materials:の箇条書きが様式の1行ずつに載るようにする）。空行はスキップ。
+ *  幅チェックを最後まで行い、maxLinesに収まらない場合も行を切り捨てたり結合したりせず、
+ *  overflow: true と実際の行数(lineCount)を添えて返す。呼び出し側で必ずoverflowを確認すること。
+ *  スペースを含まない1語がmaxWidthを超える場合は、その語を文字単位で分割して折り返す
+ *  （連結した型番・URL等でも必ず幅チェックを通す）。 */
+function tscaWrapDescription(font, text, maxWidth, maxLines) {
+  var lines = [];
+
+  (text || '').split('\n').forEach(function(segment) {
+    var words = segment.split(' ').filter(function(w) { return w; });
+    if (words.length === 0) return; // 空行は様式の行を消費させない
+    var current = '';
+
+    function splitLongWord(word) {
+      // 1語だけでmaxWidthを超える場合、文字単位で分割して行に積む
+      var chunk = current;
+      for (var i = 0; i < word.length; i++) {
+        var ch = word.charAt(i);
+        var test = chunk + ch;
+        if (font.widthOfTextAtSize(test, TSCA_FONT_SIZE) > maxWidth && chunk) {
+          lines.push(chunk);
+          chunk = ch;
+        } else {
+          chunk = test;
+        }
+      }
+      current = chunk;
+    }
+
+    words.forEach(function(w) {
+      var test = current ? (current + ' ' + w) : w;
+      var width = font.widthOfTextAtSize(test, TSCA_FONT_SIZE);
+      if (width <= maxWidth) {
+        current = test;
+        return;
+      }
+      // testが幅超過。まず現在行を確定し、wordだけで幅に収まるか再確認する。
+      if (current) {
+        lines.push(current);
+        current = '';
+      }
+      if (font.widthOfTextAtSize(w, TSCA_FONT_SIZE) > maxWidth) {
+        splitLongWord(w);
+      } else {
+        current = w;
+      }
+    });
+    if (current) lines.push(current);
+  });
+
+  if (lines.length === 0) lines = [''];
+  return { lines: lines, lineCount: lines.length, overflow: lines.length > maxLines };
+}
+
+/** PDF生成本体。AcroFormは使わず、Helveticaテキストとチェックマークのポリラインを
+ *  様式PDFの2ページ目に直接描画してフラット化する。 */
+function tscaGeneratePdf() {
+  var btn = document.getElementById('tscaGenerateBtn');
+  var f = state.tsca.form;
+  if (!f) { alert('入力内容が見つかりません。フォームからやり直してください。'); return; }
+  if (typeof PDFLib === 'undefined') {
+    alert('PDF処理ライブラリの読み込みに失敗しました。拡張機能を再読み込みしてください。');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '生成中…';
+
+  tscaGetTemplateBytes(function(templateBytes, err) {
+    if (!templateBytes) {
+      alert('様式PDFの読み込みに失敗しました: ' + (err && err.message ? err.message : String(err || '')));
+      btn.disabled = false;
+      btn.textContent = 'PDFを生成してダウンロード';
+      return;
+    }
+
+    PDFLib.PDFDocument.load(templateBytes).then(function(templateDoc) {
+      var pageCount = templateDoc.getPageCount();
+      var pageIndex = (pageCount > TSCA_TEMPLATE_PAGE_INDEX) ? TSCA_TEMPLATE_PAGE_INDEX : (pageCount - 1);
+
+      return PDFLib.PDFDocument.create().then(function(outDoc) {
+        return outDoc.copyPages(templateDoc, [pageIndex]).then(function(copiedPages) {
+          outDoc.addPage(copiedPages[0]);
+          // 様式由来のAcroFormウィジェット注釈のみ除去してフラット化する。
+          // ウィジェット注釈はページ内容の上に描画されるため、白背景(/MK /BG [1 1 1])の
+          // チェックボックスウィジェットが残っていると、焼き付けたチェックマークが
+          // 隠れて見えなくなる（11/2025版様式で実測）。
+          // ハイライト等ウィジェット以外の注釈は様式の見た目の一部なので残す。
+          (function removeWidgetAnnots(pageNode) {
+            var annotsName = PDFLib.PDFName.of('Annots');
+            var annots = pageNode.lookup(annotsName);
+            if (!annots || typeof annots.size !== 'function') return;
+            var kept = outDoc.context.obj([]);
+            for (var ai = 0; ai < annots.size(); ai++) {
+              var annotDict = annots.lookup(ai);
+              var subtype = annotDict && annotDict.get ? annotDict.get(PDFLib.PDFName.of('Subtype')) : null;
+              if (subtype === PDFLib.PDFName.of('Widget')) continue;
+              kept.push(annots.get(ai));
+            }
+            pageNode.set(annotsName, kept);
+          })(copiedPages[0].node);
+          return Promise.all([
+            outDoc.embedFont(PDFLib.StandardFonts.Helvetica),
+            outDoc.embedFont(PDFLib.StandardFonts.HelveticaOblique)
+          ]).then(function(fonts) {
+            var helv = fonts[0];
+            var helvOblique = fonts[1];
+            var page = outDoc.getPage(0);
+            var black = PDFLib.rgb(0, 0, 0);
+
+            function draw(text, coord, font) {
+              if (!text) return;
+              page.drawText(text, { x: coord.x, y: coord.y, size: TSCA_FONT_SIZE, font: font || helv, color: black });
+            }
+
+            draw(f.date, TSCA_COORD.date);
+            draw(f.waybill, TSCA_COORD.waybill);
+            draw(f.companyName, TSCA_COORD.companyName);
+            draw(f.companyAddress, TSCA_COORD.companyAddress);
+            draw(f.certifierName, TSCA_COORD.certifierName);
+            draw(f.certifierTitle, TSCA_COORD.certifierTitle);
+            draw(f.certifierPhone, TSCA_COORD.certifierPhone);
+            draw(f.certifierEmail, TSCA_COORD.certifierEmail);
+            draw(f.certifierName, TSCA_COORD.signature, helvOblique);
+
+            var wrap = tscaWrapDescription(helv, f.productDesc, TSCA_DESC_MAX_WIDTH, TSCA_COORD.descRows.length);
+            if (wrap.overflow) {
+              throw new Error('商品説明が' + TSCA_COORD.descRows.length + '行に収まりません（現在' + wrap.lineCount + '行相当）。フォームに戻って短くしてください。');
+            }
+            wrap.lines.forEach(function(line, i) {
+              if (TSCA_COORD.descRows[i]) draw(line, TSCA_COORD.descRows[i]);
+            });
+
+            var box = TSCA_CHECKBOX[f.certType === 'positive' ? 'positive' : 'negative'];
+            var pts = TSCA_CHECK_OFFSETS.map(function(o) {
+              return { x: box.x0 + o.dx, y: box.y0 + o.dy };
+            });
+            page.drawLine({ start: pts[0], end: pts[1], thickness: 1.6, color: black });
+            page.drawLine({ start: pts[1], end: pts[2], thickness: 1.6, color: black });
+
+            return outDoc.save();
+          });
+        });
+      });
+    }).then(function(bytes) {
+      var blob = new Blob([bytes], { type: 'application/pdf' });
+      var url = URL.createObjectURL(blob);
+      var filename = f.waybill
+        ? ('TSCA_' + f.waybill + '.pdf')
+        : ('TSCA_' + tscaFormatDateYYYYMMDD(new Date()) + '.pdf');
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function() { URL.revokeObjectURL(url); }, 4000);
+
+      btn.disabled = false;
+      btn.textContent = 'PDFを生成してダウンロード';
+      document.getElementById('tscaDoneMsg').textContent = filename + ' をダウンロードしました。';
+      showTscaSub('tscaSubDone');
+    }).catch(function(err) {
+      console.error('TSCA PDF generation error', err);
+      alert('PDFの生成に失敗しました: ' + (err && err.message ? err.message : String(err)));
+      btn.disabled = false;
+      btn.textContent = 'PDFを生成してダウンロード';
+    });
+  });
+}
+
+/** TSCA機能を初期状態に戻してホームへ */
+function tscaStartOver() {
+  state.tsca.form = null;
+  showSection('sectionHome');
+}
+
+// -------------------------------------------------------
+// TSCA証明書機能: イベント登録
+// -------------------------------------------------------
+window.addEventListener('load', function() {
+  document.getElementById('tscaManualLink').addEventListener('click', openTscaSection);
+  document.getElementById('backFromTsca').addEventListener('click', function() {
+    showSection('sectionHome');
+  });
+  var tscaSettingsHintLink = document.getElementById('tscaSettingsHintLink');
+  if (tscaSettingsHintLink) {
+    tscaSettingsHintLink.addEventListener('click', function() {
+      showSection('sectionSettings');
+    });
+  }
+
+  document.getElementById('tscaFileInput').addEventListener('change', function(e) {
+    var file = e.target.files && e.target.files[0];
+    tscaHandleFileSelect(file);
+  });
+  document.getElementById('tscaResetTemplateBtn').addEventListener('click', tscaResetTemplate);
+
+  document.getElementById('tscaWaybill').addEventListener('input', function() {
+    this.value = this.value.replace(/[^0-9]/g, '').slice(0, 12);
+  });
+
+  document.getElementById('tscaAiDescBtn').addEventListener('click', tscaGenerateDescription);
+  document.getElementById('tscaGoToConfirmBtn').addEventListener('click', tscaGoToConfirm);
+
+  document.getElementById('tscaConfirmCheck').addEventListener('change', function() {
+    document.getElementById('tscaGenerateBtn').disabled = !this.checked;
+  });
+  document.getElementById('tscaGenerateBtn').addEventListener('click', tscaGeneratePdf);
+  document.getElementById('tscaBackToFormBtn').addEventListener('click', function() {
+    showTscaSub('tscaSubForm');
+  });
+
+  document.getElementById('tscaStartOverBtn').addEventListener('click', tscaStartOver);
+});
