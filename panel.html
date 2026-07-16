@@ -474,14 +474,31 @@
         <input type="email" id="tscaCertifierEmail">
       </div>
 
-      <div class="section-label" style="margin-top:14px;">商品説明（英語）</div>
+      <div class="section-label" style="margin-top:14px;">商品情報（英語）</div>
+      <div class="field-note">
+        各商品は「通関用タイトル（様式の1行に記載）」と「詳細説明（材質・割合など）」の2つで入力します。
+        同梱発送などで商品が複数ある場合は、1商品ずつ入力して「＋ 商品リストに追加」を押してください。
+        商品ページを切り替えてから赤ボタン（ホームの「AIでTSCA書類を作成する」または下の「開いているページをAIで読み取って追加」）を押すと、直前の商品は自動的にリストへ追加されます。
+        商品が1件だけの場合は、そのまま「確認画面へ進む」を押せば追加操作なしで進められます。
+      </div>
+      <div id="tscaProductList" class="tsca-product-list" style="display:none;"></div>
+
       <div id="tscaAiResultBadge" class="ai-badge" style="display:none;">✨ <strong>AI入力補助</strong> — 内容を確認・修正してから進んでください</div>
       <div class="form-group">
-        <textarea id="tscaProductDesc" rows="3" maxlength="450" placeholder="例: Used board game (Hobby Japan)"></textarea>
-        <div class="field-note">長い場合は自動的に複数行（様式の1.〜7.）に分けて記載されます。7行（英語で約400〜450文字）を超える説明は入りません。</div>
-        <div class="field-note">素材構成（PVC・ABS等）が説明に入っているか確認してください。FedExから商品の素材構成を聞かれることがあります。</div>
+        <label for="tscaProductTitle">通関用タイトル（英語・1行）</label>
+        <input type="text" id="tscaProductTitle" maxlength="120" placeholder='例: Used (secondhand) board game &quot;Catan&quot;'>
+        <div class="field-note">様式の1行（英語で約70〜80文字・最大85文字目安）に収まる簡潔なタイトル。収まらない場合は確認画面へ進む前にお知らせします。玩具・コレクティブルには末尾に年齢要件（For Ages 15+ など）が付きます。</div>
+      </div>
+      <div class="form-group">
+        <label for="tscaProductDesc">詳細説明（材質・割合など）</label>
+        <textarea id="tscaProductDesc" rows="3" maxlength="450" placeholder="Materials:&#10;- PVC (polyvinyl chloride): approx. 90%&#10;- ABS: approx. 10%"></textarea>
+        <div class="field-note">商品が1件のみで詳細が様式の残り6行に収まる場合はそのまま様式に記載されます。収まらない場合や商品が複数の場合は、自動的に続紙（別紙）に記載されます。</div>
+        <div class="field-note">素材構成（PVC・ABS等）が詳細説明に入っているか確認してください。FedExから商品の素材構成を聞かれることがあります。</div>
       </div>
       <button class="btn btn-ghost btn-sm" id="tscaAiDescBtn">✨ AIで英語説明を生成</button>
+      <button class="btn btn-ghost btn-sm" id="tscaAddProductBtn">＋ 商品リストに追加</button>
+      <button class="btn btn-ghost btn-sm" id="tscaCancelEditBtn" style="display:none;">キャンセル</button>
+      <button class="btn btn-danger btn-sm" id="tscaAiFromPageBtn" style="width:100%;margin-top:8px;">📄 開いているページをAIで読み取って追加</button>
       <div id="tscaAiMsg" class="message" style="display:none;"></div>
       <div class="field-note">AIに送信されるのは商品ページの内容のみです。氏名・連絡先・送り状番号などの個人情報は送信されず、PDF作成はすべてこの端末内で完結します。</div>
 

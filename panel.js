@@ -56,11 +56,13 @@ var state = {
   cpscWiz: null, // CPSC判定ウィザード状態
   openaiKey: '',
 
-  // TSCA証明書（FedEx）機能（v1.3.0）
+  // TSCA証明書（FedEx）機能（v1.3.0／複数商品対応 v1.4.0）
   tsca: {
     templateLoaded: false,
     pageCount: null,
-    form: null   // 確認画面へ進んだ時点のスナップショット
+    products: [],       // 作業中の商品リスト: [{ description }]。同梱発送など複数商品分をここに貯める
+    editingIndex: null, // 商品リストの何番目を編集中か（nullなら新規追加モード）
+    form: null   // 確認画面へ進んだ時点のスナップショット（form.products が確定した商品リスト）
   },
 };
 
@@ -2245,88 +2247,82 @@ function showTscaAiResultBadge(show) {
   if (el) el.style.display = show ? '' : 'none';
 }
 
-/** ホームの赤ボタン: 開いているページをAIで分析し、TSCA用の英語商品説明を生成してTSCAフォームを開く */
-function startTscaAiFlow() {
-  var msg = document.getElementById('tscaAiHomeMsg');
-  var btn = document.getElementById('tscaAiBtn');
-
-  if (!state.openaiKey) {
-    showMessage(msg, 'error', 'APIキーが未設定です。設定画面で OpenAI APIキーを入力してください。');
-    msg.style.display = '';
-    return;
-  }
-
-  btn.disabled = true;
-  showMessage(msg, 'info', '分析中…');
-  msg.style.display = '';
-
-  getPageInfo(function(pageInfo, errReason) {
-    if (!pageInfo) {
-      btn.disabled = false;
-      msg.style.display = 'none';
-      openTscaSection();
-      var aiMsg1 = document.getElementById('tscaAiMsg');
-      showMessage(aiMsg1, 'error', (errReason || 'ページ情報を取得できませんでした') + '。商品説明は手動で入力してください。');
-      return;
-    }
-    callTscaDescriptionAi(pageInfo, function(err, description) {
-      btn.disabled = false;
-      msg.style.display = 'none';
-      openTscaSection();
-      if (err || !description) {
-        var aiMsg2 = document.getElementById('tscaAiMsg');
-        showMessage(aiMsg2, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '不明なエラー') + '。商品説明は手動で入力してください。');
-        return;
-      }
-      document.getElementById('tscaProductDesc').value = description;
-      showTscaAiResultBadge(true);
-    });
-  });
-}
-
-/** 開いているページの情報からTSCA用の英語商品説明（1〜2文・誇張なし・最大350文字）を生成する */
-function callTscaDescriptionAi(pageInfo, cb) {
-  var lines = [
-    'Product URL: ' + pageInfo.url,
-    'Product name: ' + (pageInfo.productName || '')
-  ];
-  if (pageInfo.brand)       lines.push('Brand: ' + pageInfo.brand);
-  if (pageInfo.condition)   lines.push('Condition: ' + pageInfo.condition);
-  if (pageInfo.category)    lines.push('Category on site: ' + pageInfo.category);
-  if (pageInfo.description) lines.push('Description: ' + pageInfo.description);
-
-  var userContent = lines.join('\n');
-
-  var systemPrompt = [
+/** AI生成の共通システムプロンプト（通関用タイトル＋詳細説明のJSONを返させる）。
+ *  title の文字数の目安（約70〜80文字・最大85文字）は、様式の商品説明欄の拡張後の幅
+ *  (TSCA_DESC_MAX_WIDTH=450pt) に太字(Helvetica-Bold 10pt)で収まる文字数を
+ *  pdf-libのwidthOfTextAtSizeで実測して決めた（実タイトル例5種の平均5.11pt/文字 →
+ *  450ptで約88文字。太字・大文字が多い場合の余裕をみて上限85文字とした）。
+ *  タイトルが実際に1行幅へ収まるかは、確認画面へ進む前とPDF生成時の両方で機械的に
+ *  再チェックされる（収まらない場合はエラー表示して止める。黙って切らない）。
+ *  年齢要件（For Ages X+）のルールは、HSコード分析側の既存プロンプト(callOpenAI)と同一。
+ *  sourceLabel は元情報の呼び方（"product page information" or "given text"）。 */
+function tscaAiSystemPrompt(sourceLabel) {
+  return [
     'You are helping prepare a US customs document (FedEx TSCA certification) for a shipment',
-    'of a used/secondhand consumer good exported from Japan to the US.',
-    'Given the product page information below, write a concise English product description',
-    'for the "Product description" field of the customs form.',
-    'Factual, no exaggeration, no marketing or promotional language. Maximum 350 characters total.',
-    'ALWAYS include the material composition of the product as a bullet list, because FedEx may ask about materials.',
-    'Output format (use explicit line breaks exactly like this, nothing else):',
-    '<one factual sentence starting with the condition, then item type, product name in quotes, and brand>',
-    'Materials:',
-    '- <material name (full chemical name in parentheses if applicable)>: approx. <percent>%',
-    '- <material name>: approx. <percent>%',
-    'Condition rules (the first line MUST always state the condition):',
-    '- If the page information indicates a secondhand item (中古, used, pre-owned, 目立った傷や汚れなし, etc.), write "Used (secondhand)".',
-    '- Write "New" ONLY when the page information clearly states the item is new/unused/unopened (新品, 未使用, 未開封, etc.).',
+    'of used/secondhand consumer goods exported from Japan to the US.',
+    'Given the ' + sourceLabel + ' below, produce BOTH of the following in English.',
+    'Factual, no exaggeration, no marketing or promotional language.',
+    '1. "title" - a short customs product title for ONE line of the form:',
+    '   - ONE single line only (no line breaks). Target approximately 70-80 characters, NEVER exceed 85 characters.',
+    '   - Prioritize fitting over completeness: shorten or omit the brand name if needed.',
+    '   - Format: <Condition> <short item type> "<product name>"[, by <brand>][ For Ages X+].',
+    '   - Age requirement rules (append at the END of the title when applicable):',
+    '     * For anime/manga figures and collectibles (display items, not toys for actual play): append "For Ages 15+".',
+    '     * For trading cards and card games: append "For Ages 13+".',
+    '     * For toys meant for actual play with a clear target age: append "For Ages X+" using that age.',
+    '     * Omit the age requirement if the product is not a toy or collectible.',
+    '   - Example: Used (secondhand) figure "Ultimate Madoka & Homura" For Ages 15+',
+    '2. "description" - a detailed factual description:',
+    '   - One factual sentence starting with the condition, then item type, product name in quotes, and brand,',
+    '     followed by a "Materials:" bullet list. Maximum 350 characters total.',
+    '   - ALWAYS include the material composition, because FedEx may ask about materials.',
+    '   - Use explicit line breaks exactly like this:',
+    '     <one factual sentence>',
+    '     Materials:',
+    '     - <material name (full chemical name in parentheses if applicable)>: approx. <percent>%',
+    '     - <material name>: approx. <percent>%',
+    'Condition rules (both the title and the description MUST state the condition):',
+    '- If the ' + sourceLabel + ' indicates a secondhand item (中古, used, pre-owned, 目立った傷や汚れなし, etc.), write "Used (secondhand)".',
+    '- Write "New" ONLY when the ' + sourceLabel + ' clearly states the item is new/unused/unopened (新品, 未使用, 未開封, etc.).',
     '- If the condition cannot be determined, write "Used (secondhand)" (items handled by this tool come from Japanese secondhand marketplaces).',
-    'Material rules:',
-    '- If the page information states materials (素材, 材質, "Material", etc.), use them, translated into standard English material names. This takes priority.',
+    'Material rules (for the description):',
+    '- If the ' + sourceLabel + ' states materials (素材, 材質, "Material", etc.), use them, translated into standard English material names. This takes priority.',
     '- Otherwise use the industry-standard composition for the product category (e.g. painted finished figures = PVC approx. 90% / ABS approx. 10%; trading cards and board games = paper and cardboard; plush toys = polyester fabric and stuffing).',
     '- Give each material an approximate percentage prefixed with "approx.", adding up to roughly 100%.',
-    '- Write a percentage WITHOUT "approx." only when that exact figure is explicitly stated in the page information.',
-    '- List at most 4 materials (the form has only 7 writing lines in total).',
-    'Example output:',
-    'Used (secondhand) painted finished figure set "Gundam RX-78-2" by Bandai.',
-    'Materials:',
-    '- PVC (polyvinyl chloride): approx. 90%',
-    '- ABS (acrylonitrile butadiene styrene): approx. 10%',
-    'Return ONLY the description text. No quotes around the whole text, no markdown, no explanation.'
+    '- Write a percentage WITHOUT "approx." only when that exact figure is explicitly stated in the ' + sourceLabel + '.',
+    '- List at most 4 materials.',
+    'Return ONLY a single JSON object with exactly the keys "title" and "description".',
+    'No markdown, no code fences, no explanation. Example output:',
+    '{"title": "Used (secondhand) figure \\"Son Goku\\", by Banpresto For Ages 15+", "description": "Used (secondhand) painted finished figure \\"Son Goku\\" by Banpresto.\\nMaterials:\\n- PVC (polyvinyl chloride): approx. 90%\\n- ABS (acrylonitrile butadiene styrene): approx. 10%"}'
   ].join('\n');
+}
 
+/** AI応答テキストから {title, description} を取り出す。コードフェンス（```json）や前後の
+ *  説明文が混ざっていても、最初の '{' から最後の '}' までをJSONとして解析する。
+ *  解析できない・titleが無い場合は Error を投げる（呼び出し側の.catchでエラー表示に落ち、
+ *  ボタンは通常どおり復帰する。拡張機能自体は落とさない）。 */
+function tscaParseAiJson(content) {
+  var s = (content || '').trim();
+  s = s.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+  var start = s.indexOf('{');
+  var end = s.lastIndexOf('}');
+  if (start === -1 || end <= start) throw new Error('AIの応答がJSON形式ではありませんでした');
+  var obj;
+  try {
+    obj = JSON.parse(s.slice(start, end + 1));
+  } catch (e) {
+    throw new Error('AIの応答（JSON）を解析できませんでした');
+  }
+  var title = (typeof obj.title === 'string') ? obj.title.replace(/\s+/g, ' ').trim() : '';
+  var description = (typeof obj.description === 'string') ? obj.description.trim() : '';
+  if (!title) throw new Error('AIの応答にタイトル(title)が含まれていませんでした');
+  return { title: title, description: description };
+}
+
+/** OpenAI Chat Completions を呼び、応答を tscaParseAiJson で {title, description} に変換して
+ *  cb(null, result) で返す共通処理。失敗（HTTP/空応答/不正JSON）は cb(err, null)。
+ *  エンドポイント・モデル・認証は既存のOpenAI利用パターンをそのまま踏襲する。 */
+function tscaCallAiJson(systemPrompt, userContent, cb) {
   fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -2339,7 +2335,7 @@ function callTscaDescriptionAi(pageInfo, cb) {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userContent }
       ],
-      max_completion_tokens: 250
+      max_completion_tokens: 400
     })
   })
   .then(function(r) {
@@ -2353,12 +2349,82 @@ function callTscaDescriptionAi(pageInfo, cb) {
   .then(function(data) {
     var content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
     if (!content) throw new Error('AIからの応答が空でした');
-    content = content.trim().replace(/^["']|["']$/g, '');
-    cb(null, content);
+    cb(null, tscaParseAiJson(content));
   })
   .catch(function(e) {
     cb(e, null);
   });
+}
+
+/** 開いているページをAIで分析し、TSCA用の英語商品説明を生成して入力欄（下書き）にセットする共通処理。
+ *  ホームの赤ボタン（tscaAiBtn）・TSCAフォーム内のボタン（tscaAiFromPageBtn）の両方から呼ばれる。
+ *  複数商品（同梱発送）の運用: このボタンを押すと、直前の入力欄の内容が自動的に商品リストへ
+ *  確定されてから、新しいページの説明が入力欄にセットされる（下書き・編集中の扱いはどちらの
+ *  ボタンでも同じ挙動に統一する）。
+ *  btn: 処理中に無効化するボタン要素。msg: 進捗・エラーメッセージの表示先。
+ *  openSection: true ならホーム→TSCAフォームへの画面遷移（openTscaSection）を行う（ホーム赤ボタン用）。
+ *    false なら画面遷移しない（フォーム内ボタン用。既にフォームが表示されており、openTscaSection →
+ *    tscaEnterForm を呼ぶと「商品0件・下書き空」のとき isFreshStart 扱いになって Waybill・証明区分・
+ *    Certifier 欄などの入力済み値がリセットされてしまうため）。 */
+function runTscaAiFromPageFlow(btn, msg, openSection) {
+  if (!state.openaiKey) {
+    showMessage(msg, 'error', 'APIキーが未設定です。設定画面で OpenAI APIキーを入力してください。');
+    msg.style.display = '';
+    return;
+  }
+
+  // 前回の下書きが入力欄に残っていれば、先に商品リストへ確定させる
+  tscaCommitDraft();
+
+  btn.disabled = true;
+  showMessage(msg, 'info', '分析中…');
+  msg.style.display = '';
+
+  getPageInfo(function(pageInfo, errReason) {
+    if (!pageInfo) {
+      btn.disabled = false;
+      msg.style.display = 'none';
+      if (openSection) openTscaSection();
+      var aiMsg1 = document.getElementById('tscaAiMsg');
+      showMessage(aiMsg1, 'error', (errReason || 'ページ情報を取得できませんでした') + '。商品情報は手動で入力してください。');
+      return;
+    }
+    callTscaDescriptionAi(pageInfo, function(err, result) {
+      btn.disabled = false;
+      msg.style.display = 'none';
+      if (openSection) openTscaSection();
+      if (err || !result) {
+        var aiMsg2 = document.getElementById('tscaAiMsg');
+        showMessage(aiMsg2, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '不明なエラー') + '。商品情報は手動で入力してください。');
+        return;
+      }
+      document.getElementById('tscaProductTitle').value = result.title;
+      document.getElementById('tscaProductDesc').value = result.description;
+      showTscaAiResultBadge(true);
+    });
+  });
+}
+
+/** ホームの赤ボタン: 開いているページをAIで分析し、TSCA用の英語商品説明を生成してTSCAフォームを開く。 */
+function startTscaAiFlow() {
+  var msg = document.getElementById('tscaAiHomeMsg');
+  var btn = document.getElementById('tscaAiBtn');
+  runTscaAiFromPageFlow(btn, msg, true);
+}
+
+/** 開いているページの情報からTSCA用の {title, description}（通関用タイトル＋詳細説明）を生成する。
+ *  cb(err, result): 成功時 result = { title, description }。 */
+function callTscaDescriptionAi(pageInfo, cb) {
+  var lines = [
+    'Product URL: ' + pageInfo.url,
+    'Product name: ' + (pageInfo.productName || '')
+  ];
+  if (pageInfo.brand)       lines.push('Brand: ' + pageInfo.brand);
+  if (pageInfo.condition)   lines.push('Condition: ' + pageInfo.condition);
+  if (pageInfo.category)    lines.push('Category on site: ' + pageInfo.category);
+  if (pageInfo.description) lines.push('Description: ' + pageInfo.description);
+
+  tscaCallAiJson(tscaAiSystemPrompt('product page information'), lines.join('\n'), cb);
 }
 
 // -------------------------------------------------------
@@ -2373,7 +2439,31 @@ function callTscaDescriptionAi(pageInfo, cb) {
  *  実測して得た値（PDF標準の左下原点・pt単位）。 */
 var TSCA_TEMPLATE_PAGE_INDEX = 1; // 3ページ構成の様式の2ページ目（単発発送用）
 var TSCA_FONT_SIZE = 10;
-var TSCA_DESC_MAX_WIDTH = 280; // 商品説明欄の実用幅(pt)
+/** 商品説明欄の折り返し幅(pt)。以前は様式の印字下線の範囲(280pt)だったが、
+ *  下線をコードで右マージンまで延長する方式に変更したため全幅に拡大した。
+ *  実測根拠: 記入開始x=87、延長後の下線右端 TSCA_DESC_LINE_END_X=540（下記）。
+ *  540-87=453 から数ptの安全マージンを引いて450。 */
+var TSCA_DESC_MAX_WIDTH = 450;
+var TSCA_DETAILS_NOTE = 'Details: see attached product list.'; // 詳細を続紙へ送るときの案内文
+
+/** 様式に印字済みの商品説明欄の下線（"_"グリフの連なり、Helvetica 約9.96pt）の右端。
+ *  data/tsca_template.pdf 2ページ目をpdfplumberで文字単位に実測した値（x1=372.05〜372.11）。
+ *  下線の延長描画はこの位置から開始する（0.6ptだけ重ねて隙間を防ぐ）。 */
+var TSCA_DESC_PRINTED_END_X = 372.1;
+
+/** 延長後の下線の右端。様式本文パラグラフの右端の実測値539.34pt（証明文言の段落、
+ *  pdfplumberで全文字のx1を実測した最大値）に合わせて540とした。ページ幅612ptに対して
+ *  右マージン72ptとなり、続紙ページのマージン(72pt)とも一致する。 */
+var TSCA_DESC_LINE_END_X = 540;
+
+/** 下線延長の描画位置と太さ。印字下線は Arial-BoldMT 9.96pt の "_" グリフで、
+ *  生成PDFを200dpiでラスタライズしてインクのピクセル位置を実測した結果、
+ *  インクの中心は記入ベースライン(TSCA_COORD.descRows[].y)の 3.5pt 下
+ *  （1行目: ベースライン323.9に対しインク中心320.40）、太さ約1.05pt（3px/200dpi）。
+ *  Helveticaの"_"グリフは位置(319.3)も太さも印字と合わないため、グリフではなく
+ *  チェックマークと同じ drawLine で実測値どおりの水平線を引く。 */
+var TSCA_DESC_LINE_Y_OFFSET = 3.5;   // 記入ベースラインから下線中心までの距離(pt)
+var TSCA_DESC_LINE_THICKNESS = 1.05; // 印字下線の実測太さ(pt)
 
 var TSCA_COORD = {
   date:           { x: 104.0, y: 690.9 },
@@ -2409,6 +2499,25 @@ var TSCA_CHECK_OFFSETS = [
   { dx: 7.552,  dy: 4.474 },
   { dx: 15.052, dy: 15.474 }
 ];
+
+/** 下部フィールドの利用可能幅(pt)。data/tsca_template.pdf の2ページ目をpdfplumberで
+ *  文字単位に実測し、各項目の下線（アンダースコアの連続）が実際に終わるx座標を求めて、
+ *  そこから各項目の開始x座標（TSCA_COORDのx=220.0）を引いた値から、安全マージンを引いて決めた。
+ *  実測値（下線終端x）: Company name/address ≈488.46、Certifier name/title ≈488.43〜488.44、
+ *  Certifier phone/email/signature ≈493.94〜493.97（いずれも左下原点pt、フォームのページ幅612pt）。
+ *  安全マージンとして実測値から約6〜8pt差し引いている。 */
+var TSCA_FIELD_WIDTH = {
+  companyName:    262,
+  companyAddress: 262,
+  certifierName:  262,
+  certifierTitle: 262,
+  certifierPhone: 268,
+  certifierEmail: 268,
+  signature:      268
+};
+
+/** 下部フィールドが幅に収まらない場合に許容する最小フォントサイズ(pt) */
+var TSCA_MIN_FONT_SIZE = 7;
 
 // ---- base64 <-> ArrayBuffer ヘルパー ----
 function tscaArrayBufferToBase64(buffer) {
@@ -2556,26 +2665,39 @@ function tscaResetTemplate() {
   });
 }
 
-/** 記入フォーム表示。既定値・会社情報設定からのプリフィルを行う。 */
+/** 記入フォーム表示。既定値・会社情報設定からのプリフィルを行う。
+ *  同梱発送で複数商品を登録する運用（商品ページを切り替えて赤ボタンを押し直す）に対応するため、
+ *  商品リスト（state.tsca.products）と入力中の下書き（#tscaProductDesc）が既にある場合は
+ *  「作業継続中のドキュメント」とみなし、Date/Waybill/会社情報などはリセットしない。
+ *  商品リストも下書きも空の場合のみ「新規ドキュメント」として初期値を入れ直す。 */
 function tscaEnterForm() {
   tscaUpdateTemplateStatus();
-  document.getElementById('tscaDate').value = tscaFormatDateMMDDYYYY(new Date());
-  document.getElementById('tscaWaybill').value = '';
-  document.getElementById('tscaCertNegative').checked = true;
-  document.getElementById('tscaCertPositive').checked = false;
 
-  var nt = tscaSplitNameTitle(state.company.nameTitle);
-  document.getElementById('tscaCertifierName').value  = state.company.certifierName || nt.name || '';
-  document.getElementById('tscaCertifierTitle').value = state.company.certifierTitle || nt.title || '';
-  document.getElementById('tscaCertifierPhone').value = state.company.phone || '';
-  document.getElementById('tscaCertifierEmail').value = state.company.email || '';
-  document.getElementById('tscaCompanyName').value    = state.company.name || '';
-  document.getElementById('tscaCompanyAddress').value = state.company.address || '';
-  document.getElementById('tscaProductDesc').value    = '';
+  var draftEl = document.getElementById('tscaProductDesc');
+  var titleDraftEl = document.getElementById('tscaProductTitle');
+  var isFreshStart = (state.tsca.products.length === 0) && !draftEl.value.trim() &&
+    !(titleDraftEl && titleDraftEl.value.trim());
+
+  if (isFreshStart) {
+    document.getElementById('tscaDate').value = tscaFormatDateMMDDYYYY(new Date());
+    document.getElementById('tscaWaybill').value = '';
+    document.getElementById('tscaCertNegative').checked = true;
+    document.getElementById('tscaCertPositive').checked = false;
+
+    var nt = tscaSplitNameTitle(state.company.nameTitle);
+    document.getElementById('tscaCertifierName').value  = state.company.certifierName || nt.name || '';
+    document.getElementById('tscaCertifierTitle').value = state.company.certifierTitle || nt.title || '';
+    document.getElementById('tscaCertifierPhone').value = state.company.phone || '';
+    document.getElementById('tscaCertifierEmail').value = state.company.email || '';
+    document.getElementById('tscaCompanyName').value    = state.company.name || '';
+    document.getElementById('tscaCompanyAddress').value = state.company.address || '';
+  }
 
   var aiMsg = document.getElementById('tscaAiMsg');
   if (aiMsg) aiMsg.style.display = 'none';
   showTscaAiResultBadge(false);
+  tscaUpdateAddProductBtnLabel();
+  tscaRenderProductList();
 
   // 設定にCertifier情報が何も保存されていなければ、設定画面への案内を表示
   var hintEl = document.getElementById('tscaSettingsHint');
@@ -2587,17 +2709,20 @@ function tscaEnterForm() {
   showTscaSub('tscaSubForm');
 }
 
-/** AIで英語の商品説明を生成（既存のOpenAI利用パターンを踏襲） */
+/** AIで英語の通関用タイトル・詳細説明を生成（既存のOpenAI利用パターンを踏襲）。
+ *  タイトル欄・詳細欄のどちらに書かれた内容でも元情報として使い、
+ *  生成結果（title + description）を両方の欄にセットする。 */
 function tscaGenerateDescription() {
   var msgEl = document.getElementById('tscaAiMsg');
   var btn = document.getElementById('tscaAiDescBtn');
+  var titleEl = document.getElementById('tscaProductTitle');
   var textEl = document.getElementById('tscaProductDesc');
 
   if (!state.openaiKey) {
     showMessage(msgEl, 'error', 'APIキーが未設定です。設定画面で OpenAI APIキーを入力してください。');
     return;
   }
-  var source = textEl.value.trim();
+  var source = (titleEl.value.trim() + '\n' + textEl.value.trim()).trim();
   if (!source) {
     showMessage(msgEl, 'error', '商品名など、元になる情報を先に入力してください（日本語可）。');
     return;
@@ -2606,75 +2731,313 @@ function tscaGenerateDescription() {
   btn.disabled = true;
   showMessage(msgEl, 'info', '生成中…');
 
-  var systemPrompt = [
-    'You are helping prepare a FedEx TSCA (Toxic Substances Control Act) certification form',
-    'for a shipment of used/secondhand consumer goods exported from Japan to the US.',
-    'Given a short Japanese or English product name/description, write ONE concise English',
-    'product description suitable for the "Product description" field of the form.',
-    'Keep it factual and short. No marketing language. Maximum 350 characters total.',
-    'ALWAYS include the material composition of the product as a bullet list, because FedEx may ask about materials.',
-    'Output format (use explicit line breaks exactly like this, nothing else):',
-    '<one factual sentence starting with the condition, then item type, product name in quotes, and brand>',
-    'Materials:',
-    '- <material name (full chemical name in parentheses if applicable)>: approx. <percent>%',
-    '- <material name>: approx. <percent>%',
-    'Condition rules (the first line MUST always state the condition):',
-    '- If the given text indicates a secondhand item (中古, used, pre-owned, 目立った傷や汚れなし, etc.), write "Used (secondhand)".',
-    '- Write "New" ONLY when the given text clearly states the item is new/unused/unopened (新品, 未使用, 未開封, etc.).',
-    '- If the condition cannot be determined, write "Used (secondhand)" (items handled by this tool come from Japanese secondhand marketplaces).',
-    'Material rules:',
-    '- If the given text states materials (素材, 材質, "Material", etc.), use them, translated into standard English material names. This takes priority.',
-    '- Otherwise use the industry-standard composition for the product category (e.g. painted finished figures = PVC approx. 90% / ABS approx. 10%; trading cards and board games = paper and cardboard; plush toys = polyester fabric and stuffing).',
-    '- Give each material an approximate percentage prefixed with "approx.", adding up to roughly 100%.',
-    '- Write a percentage WITHOUT "approx." only when that exact figure is explicitly stated in the given text.',
-    '- List at most 4 materials (the form has only 7 writing lines in total).',
-    'Example output:',
-    'Used (secondhand) painted finished figure set "Gundam RX-78-2" by Bandai.',
-    'Materials:',
-    '- PVC (polyvinyl chloride): approx. 90%',
-    '- ABS (acrylonitrile butadiene styrene): approx. 10%',
-    'Return ONLY the description text. No quotes around the whole text, no markdown, no explanation.'
-  ].join('\n');
-
-  fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + state.openaiKey
-    },
-    body: JSON.stringify({
-      model: 'gpt-5.4',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: source }
-      ],
-      max_completion_tokens: 250
-    })
-  })
-  .then(function(r) {
-    if (!r.ok) {
-      return r.json().then(function(errBody) {
-        throw new Error((errBody.error && errBody.error.message) || ('HTTP ' + r.status));
-      });
-    }
-    return r.json();
-  })
-  .then(function(data) {
-    var content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-    if (!content) throw new Error('AIからの応答が空でした');
-    content = content.trim().replace(/^["']|["']$/g, '');
-    textEl.value = content;
-    msgEl.style.display = 'none';
-  })
-  .catch(function(e) {
-    showMessage(msgEl, 'error', 'AI呼び出しに失敗しました: ' + e.message);
-  })
-  .finally(function() {
+  tscaCallAiJson(tscaAiSystemPrompt('given text'), source, function(err, result) {
     btn.disabled = false;
+    if (err || !result) {
+      showMessage(msgEl, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '不明なエラー'));
+      return;
+    }
+    titleEl.value = result.title;
+    textEl.value = result.description;
+    msgEl.style.display = 'none';
   });
 }
 
-/** 記入フォーム → 確認画面（商品説明が7行に収まるかを確認してから進む） */
+// -------------------------------------------------------
+// TSCA証明書: 複数商品（同梱発送）対応の商品リスト管理
+// -------------------------------------------------------
+
+/** #tscaProductDesc の入力内容を整形して返す。改行(\n)は保持する（AIが生成する説明文は
+ *  "\nMaterials:\n- ..." のような箇条書き形式のため、改行を潰すと tscaWrapDescription が
+ *  各行を独立した1行として折り返せなくなる）。各行内の連続空白は1つにまとめ、行ごとに
+ *  前後の空白を除去し、空行は詰める（行番号がずれないように）。 */
+function tscaNormalizeProductText(raw) {
+  return (raw || '')
+    .split(/\r?\n/)
+    .map(function(s) { return s.replace(/[ \t]+/g, ' ').trim(); })
+    .filter(function(s) { return s; })
+    .join('\n')
+    .trim();
+}
+
+/** タイトル入力欄の内容を1行に正規化する（改行・連続空白は1スペースに） */
+function tscaNormalizeTitleText(raw) {
+  return (raw || '').replace(/\s+/g, ' ').trim();
+}
+
+/** 商品1件を {title, description} 形式に正規化して返す。
+ *  旧データ構造（descriptionのみ）の下書き・stateが残っていても壊れないよう、
+ *  タイトルが無い場合は詳細説明の1行目をタイトルに繰り上げ、残りを詳細として扱う。 */
+function tscaEffectiveProduct(p) {
+  var title = tscaNormalizeTitleText(p && p.title);
+  var desc = (p && p.description) ? String(p.description).trim() : '';
+  if (!title && desc) {
+    var lines = desc.split('\n');
+    title = tscaNormalizeTitleText(lines.shift());
+    desc = lines.join('\n').trim();
+  }
+  return { title: title, description: desc };
+}
+
+/** 入力欄（#tscaProductTitle / #tscaProductDesc）の内容を商品リストへ確定する。
+ *  state.tsca.editingIndex が設定されていれば、その位置を上書きする（編集の確定）。
+ *  そうでなければ末尾に新規追加する。両方の入力欄が空の場合は何もしない。
+ *  タイトルが空で詳細だけがある場合（旧形式の下書きなど）も内容を失わないよう、
+ *  詳細の1行目をタイトルに繰り上げて確定する（tscaEffectiveProductと同じ規則）。
+ *  戻り値: 確定した場合は true、入力が空で何もしなかった場合は false。 */
+function tscaCommitDraft() {
+  var titleEl = document.getElementById('tscaProductTitle');
+  var textEl = document.getElementById('tscaProductDesc');
+  if (!titleEl || !textEl) return false;
+  var product = tscaEffectiveProduct({
+    title: titleEl.value,
+    description: tscaNormalizeProductText(textEl.value)
+  });
+  if (!product.title && !product.description) return false;
+
+  var idx = state.tsca.editingIndex;
+  if (idx != null && idx >= 0 && idx < state.tsca.products.length) {
+    state.tsca.products[idx] = product;
+  } else {
+    state.tsca.products.push(product);
+  }
+  state.tsca.editingIndex = null;
+  titleEl.value = '';
+  textEl.value = '';
+  showTscaAiResultBadge(false);
+  tscaRenderProductList();
+  tscaUpdateAddProductBtnLabel();
+  return true;
+}
+
+/** 「＋ 商品リストに追加」ボタンのラベルを、新規追加モード／編集モードに応じて切り替える。
+ *  編集モード中は「キャンセル」ボタン（tscaCancelEdit）も表示する。 */
+function tscaUpdateAddProductBtnLabel() {
+  var btn = document.getElementById('tscaAddProductBtn');
+  var cancelBtn = document.getElementById('tscaCancelEditBtn');
+  var editing = (state.tsca.editingIndex != null);
+  if (btn) btn.textContent = editing ? '更新してリストへ反映' : '＋ 商品リストに追加';
+  if (cancelBtn) cancelBtn.style.display = editing ? '' : 'none';
+}
+
+/** 商品リストUIの再描画。0件の場合は非表示にする（1商品だけの場合の入力の手間を増やさないため）。 */
+function tscaRenderProductList() {
+  var listEl = document.getElementById('tscaProductList');
+  if (!listEl) return;
+  var products = state.tsca.products;
+  listEl.innerHTML = '';
+
+  if (products.length === 0) {
+    listEl.style.display = 'none';
+    return;
+  }
+  listEl.style.display = '';
+
+  products.forEach(function(p, i) {
+    var row = document.createElement('div');
+    row.className = 'tsca-product-row';
+    if (state.tsca.editingIndex === i) row.className += ' tsca-product-row-editing';
+
+    var num = document.createElement('span');
+    num.className = 'tsca-product-num';
+    num.textContent = (i + 1) + '.';
+
+    var text = document.createElement('span');
+    text.className = 'tsca-product-text';
+    var ep = tscaEffectiveProduct(p);
+    var preview = ep.title + (ep.description ? ' — ' + ep.description.replace(/\s+/g, ' ').trim() : '');
+    if (preview.length > 70) preview = preview.substring(0, 70) + '…';
+    text.textContent = preview;
+
+    var editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'btn btn-ghost btn-xs';
+    editBtn.textContent = '編集';
+    editBtn.addEventListener('click', function() { tscaEditProduct(i); });
+
+    var delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'btn btn-ghost btn-xs tsca-product-del';
+    delBtn.textContent = '削除';
+    delBtn.addEventListener('click', function() { tscaDeleteProduct(i); });
+
+    row.appendChild(num);
+    row.appendChild(text);
+    row.appendChild(editBtn);
+    row.appendChild(delBtn);
+    listEl.appendChild(row);
+  });
+}
+
+/** 商品リストの1件を編集用に入力欄へ読み込む。編集中でも項目自体はリストに残したままにし、
+ *  「更新してリストへ反映」（tscaCommitDraft）を押した時点で初めてその内容を上書きする
+ *  （編集中に別の操作へ移っても内容が消えないようにするため、編集開始時にリストから外さない）。
+ *  確定は明示的な「更新してリストへ反映」操作のみで行う。既に別項目を編集中、または
+ *  未確定の新規下書きがある状態で別項目の「編集」を押した場合も、その内容を黙って商品
+ *  リストへ確定はしない（入力欄の中身は新しい編集対象の内容で置き換わる。確定していない
+ *  下書き自体はまだリストに存在しないので、消えるのは「保存されていない未確定の入力」の
+ *  みで、既存の商品データが上書きされることはない）。 */
+function tscaEditProduct(index) {
+  var p = state.tsca.products[index];
+  if (!p) return;
+  var ep = tscaEffectiveProduct(p);
+  state.tsca.editingIndex = index;
+  document.getElementById('tscaProductTitle').value = ep.title;
+  document.getElementById('tscaProductDesc').value = ep.description;
+  showTscaAiResultBadge(false);
+  tscaRenderProductList();
+  tscaUpdateAddProductBtnLabel();
+}
+
+/** 編集モードのキャンセル。商品リストの該当項目は編集開始以降一切変更していないため
+ *  （更新は明示的な「更新してリストへ反映」でのみ行われる）、リスト側は何もせず、
+ *  editingIndexをクリアして入力欄を空に戻すだけでよい。 */
+function tscaCancelEdit() {
+  state.tsca.editingIndex = null;
+  document.getElementById('tscaProductTitle').value = '';
+  document.getElementById('tscaProductDesc').value = '';
+  showTscaAiResultBadge(false);
+  tscaRenderProductList();
+  tscaUpdateAddProductBtnLabel();
+}
+
+/** 商品リストから1件削除する。編集中の項目を削除した場合は入力欄もクリアする。 */
+function tscaDeleteProduct(index) {
+  state.tsca.products.splice(index, 1);
+  if (state.tsca.editingIndex === index) {
+    state.tsca.editingIndex = null;
+    document.getElementById('tscaProductTitle').value = '';
+    document.getElementById('tscaProductDesc').value = '';
+    showTscaAiResultBadge(false);
+  } else if (state.tsca.editingIndex != null && state.tsca.editingIndex > index) {
+    state.tsca.editingIndex--;
+  }
+  tscaRenderProductList();
+  tscaUpdateAddProductBtnLabel();
+}
+
+/** 商品リスト（{title, description}）の様式2ページ目への出力レイアウトを組み立てる。
+ *  戻り値: { mode, lines, needsContinuation, errors }
+ *   - lines: 様式の1.〜7.に上から順に描画する {text, kind} の配列（最大7要素）。
+ *     kind: 'title'（太字）/ 'detail'（通常）/ 'note'（案内文・太字・中央寄せ）/ 'more'（"+ N more items"・通常）。
+ *   - needsContinuation: true なら続紙（別紙）に全商品のタイトル＋詳細説明を付ける。
+ *   - errors: 1行幅(TSCA_DESC_MAX_WIDTH)に収まらないタイトル等のエラーメッセージ配列。
+ *     1件でもあれば呼び出し側でエラー表示して止める（黙って切らない）。
+ *  mode の内訳:
+ *   - 'single'：商品1件。1行目=タイトル、2行目以降=詳細説明（残り6行に収まる場合）。
+ *   - 'single-continuation'：商品1件だが詳細が残り6行に収まらない。2行目に案内文、詳細は続紙へ（エラーにしない）。
+ *   - 'titles'：商品2〜7件。各行にタイトル。空き行があれば次の行に案内文。詳細は続紙へ。
+ *   - 'overflow'：商品8件以上。1〜6行目=最初の6件のタイトル、7行目="+ N more items ..."。全商品は続紙へ。
+ *  font=Helvetica（詳細行・more行の描画/計測用）、boldFont=Helvetica-Bold（タイトル行の描画/計測用）。
+ *  タイトルは太字で描画するため、幅チェックも太字で行う。 */
+function tscaBuildFormLayout(font, boldFont, products) {
+  var rows = TSCA_COORD.descRows.length; // 7
+  var errors = [];
+  function fits(text, f) {
+    return f.widthOfTextAtSize(text, TSCA_FONT_SIZE) <= TSCA_DESC_MAX_WIDTH;
+  }
+
+  // 全商品のタイトルを一律で幅チェックする（続紙にしか載らない8件目以降も含む。
+  // 後から商品を削除して様式面に繰り上がっても通るよう、基準を統一しておく）。
+  products.forEach(function(p, i) {
+    var t = p.title || '';
+    if (!t) {
+      errors.push('商品' + (i + 1) + 'のタイトルが空です。');
+    } else if (!fits(t, boldFont)) {
+      errors.push('商品' + (i + 1) + 'のタイトルが様式の1行に収まりません（英語で約85文字が上限の目安です）: ' + t);
+    }
+  });
+
+  var lines = [];
+  var needsContinuation = false;
+  var mode;
+
+  if (products.length === 1) {
+    var p0 = products[0];
+    lines.push({ text: p0.title || '', kind: 'title' });
+    if (p0.description) {
+      var wrap = tscaWrapDescription(font, p0.description, TSCA_DESC_MAX_WIDTH, rows - 1);
+      if (wrap.overflow) {
+        mode = 'single-continuation';
+        lines.push({ text: TSCA_DETAILS_NOTE, kind: 'note' });
+        needsContinuation = true;
+      } else {
+        mode = 'single';
+        wrap.lines.forEach(function(t) { lines.push({ text: t, kind: 'detail' }); });
+      }
+    } else {
+      mode = 'single';
+    }
+  } else if (products.length <= rows) {
+    mode = 'titles';
+    products.forEach(function(p) { lines.push({ text: p.title || '', kind: 'title' }); });
+    var anyDetails = products.some(function(p) { return p.description; });
+    if (anyDetails) {
+      needsContinuation = true;
+      if (lines.length < rows) lines.push({ text: TSCA_DETAILS_NOTE, kind: 'note' }); // 7件ちょうどのときは空き行が無いので省略
+    }
+  } else {
+    mode = 'overflow';
+    var visible = rows - 1; // 6
+    products.slice(0, visible).forEach(function(p) { lines.push({ text: p.title || '', kind: 'title' }); });
+    var moreLine = '+ ' + (products.length - visible) + ' more items (see attached product list)';
+    if (!fits(moreLine, font)) {
+      errors.push('"' + moreLine + '" が様式の1行に収まりません。');
+    }
+    lines.push({ text: moreLine, kind: 'more' });
+    needsContinuation = true;
+  }
+
+  return { mode: mode, lines: lines, needsContinuation: needsContinuation, errors: errors };
+}
+
+/** 様式2ページ目の商品欄（1.〜7.）に layout.lines を描画する。
+ *  - 書き込みがある行だけ、印字済み下線の右端(TSCA_DESC_PRINTED_END_X)から
+ *    TSCA_DESC_LINE_END_X まで下線を延長する。チェックマークと同じ drawLine による
+ *    水平線で、y位置・太さは印字下線のインクをラスタ実測した値に合わせる
+ *    （TSCA_DESC_LINE_Y_OFFSET / TSCA_DESC_LINE_THICKNESS）。
+ *    未使用の行は様式の印字下線がそのまま残るため延長しない（様式の見た目を変えない）。
+ *  - kind='title' は太字、'note' は太字＋行全幅に対して中央寄せ、その他は通常フォント。 */
+function tscaDrawFormProductLines(page, helv, helvBold, layout) {
+  var black = PDFLib.rgb(0, 0, 0);
+  layout.lines.forEach(function(entry, i) {
+    var coord = TSCA_COORD.descRows[i];
+    if (!coord || !entry.text) return;
+
+    // 下線の延長（書き込みがある行のみ）。印字下線と僅かに重ねて隙間を防ぐ。
+    var lineY = coord.y - TSCA_DESC_LINE_Y_OFFSET;
+    page.drawLine({
+      start: { x: TSCA_DESC_PRINTED_END_X - 0.6, y: lineY },
+      end:   { x: TSCA_DESC_LINE_END_X, y: lineY },
+      thickness: TSCA_DESC_LINE_THICKNESS,
+      color: black
+    });
+
+    if (entry.kind === 'note') {
+      var w = helvBold.widthOfTextAtSize(entry.text, TSCA_FONT_SIZE);
+      var cx = coord.x + ((TSCA_DESC_LINE_END_X - coord.x) - w) / 2;
+      page.drawText(entry.text, { x: cx, y: coord.y, size: TSCA_FONT_SIZE, font: helvBold, color: black });
+    } else {
+      var f = (entry.kind === 'title') ? helvBold : helv;
+      page.drawText(entry.text, { x: coord.x, y: coord.y, size: TSCA_FONT_SIZE, font: f, color: black });
+    }
+  });
+}
+
+/** 下部フィールド1つが指定幅に収まる最大フォントサイズ(pt)を返す。
+ *  TSCA_FONT_SIZE(10pt)から0.5pt刻みでTSCA_MIN_FONT_SIZE(7pt)まで縮小して試す。
+ *  最小サイズでも収まらない場合は null を返す（呼び出し側でエラー扱いにする）。 */
+function tscaFitFontSize(font, text, maxWidth) {
+  if (!text) return TSCA_FONT_SIZE;
+  for (var size = TSCA_FONT_SIZE; size >= TSCA_MIN_FONT_SIZE - 0.001; size -= 0.5) {
+    if (font.widthOfTextAtSize(text, size) <= maxWidth) return size;
+  }
+  return null;
+}
+
+/** 記入フォーム → 確認画面。
+ *  下部フィールド（会社情報・Certifier情報）が様式の欄の幅に収まるか、
+ *  商品説明（1件なら7行、複数件ならレイアウト判定）が収まるかを確認してから進む。 */
 function tscaGoToConfirm() {
   var waybill = document.getElementById('tscaWaybill').value.replace(/[^0-9]/g, '');
   // Waybill番号は任意入力。入力されている場合のみ12桁の数字であることを検証する。
@@ -2693,12 +3056,6 @@ function tscaGoToConfirm() {
     certifierName:   document.getElementById('tscaCertifierName').value.trim(),
     certifierPhone:  document.getElementById('tscaCertifierPhone').value.trim(),
     certifierEmail:  document.getElementById('tscaCertifierEmail').value.trim(),
-    // 明示的な改行（Materials:箇条書き等）は保持し、行内の連続空白のみ正規化する
-    productDesc:     document.getElementById('tscaProductDesc').value
-                       .split(/\r?\n/)
-                       .map(function(s) { return s.replace(/\s+/g, ' ').trim(); })
-                       .filter(function(s) { return s; })
-                       .join('\n'),
     companyName:     document.getElementById('tscaCompanyName').value.trim(),
     companyAddress:  document.getElementById('tscaCompanyAddress').value.trim(),
     certifierTitle:  document.getElementById('tscaCertifierTitle').value.trim()
@@ -2708,31 +3065,66 @@ function tscaGoToConfirm() {
     alert('Certifier name を入力してください。');
     return;
   }
-  if (!f.productDesc) {
-    alert('商品説明を入力してください。');
+
+  // 入力欄に残っている下書きを商品リストへ確定してから、商品が1件以上あるか確認する
+  tscaCommitDraft();
+  if (state.tsca.products.length === 0) {
+    alert('商品の通関用タイトル（または詳細説明）を入力してください。');
     return;
   }
+  // 旧形式（descriptionのみ）のstateが残っていても壊れないよう、ここで正規化する
+  f.products = state.tsca.products.map(tscaEffectiveProduct);
+
   if (typeof PDFLib === 'undefined') {
     alert('PDF処理ライブラリの読み込みに失敗しました。拡張機能を再読み込みしてください。');
     return;
   }
 
   PDFLib.PDFDocument.create().then(function(tmpDoc) {
-    return tmpDoc.embedFont(PDFLib.StandardFonts.Helvetica);
-  }).then(function(helv) {
-    var wrap = tscaWrapDescription(helv, f.productDesc, TSCA_DESC_MAX_WIDTH, TSCA_COORD.descRows.length);
-    if (wrap.overflow) {
-      alert('商品説明が長すぎます。' + TSCA_COORD.descRows.length + '行に収まるよう短くしてください（現在' + wrap.lineCount + '行相当）。');
+    return Promise.all([
+      tmpDoc.embedFont(PDFLib.StandardFonts.Helvetica),
+      tmpDoc.embedFont(PDFLib.StandardFonts.HelveticaOblique),
+      tmpDoc.embedFont(PDFLib.StandardFonts.HelveticaBold)
+    ]);
+  }).then(function(fonts) {
+    var helv = fonts[0], helvOblique = fonts[1], helvBold = fonts[2];
+
+    // 1) 下部フィールド（会社情報・Certifier情報）の幅チェック
+    var fieldChecks = [
+      ['Company name', f.companyName, TSCA_FIELD_WIDTH.companyName, helv],
+      ['Company address', f.companyAddress, TSCA_FIELD_WIDTH.companyAddress, helv],
+      ['Certifier name', f.certifierName, TSCA_FIELD_WIDTH.certifierName, helv],
+      ['Certifier title', f.certifierTitle, TSCA_FIELD_WIDTH.certifierTitle, helv],
+      ['Certifier phone', f.certifierPhone, TSCA_FIELD_WIDTH.certifierPhone, helv],
+      ['Certifier email', f.certifierEmail, TSCA_FIELD_WIDTH.certifierEmail, helv]
+    ];
+    var tooLong = fieldChecks.filter(function(c) {
+      return c[1] && tscaFitFontSize(c[3], c[1], c[2]) == null;
+    }).map(function(c) { return c[0]; });
+    if (tooLong.length) {
+      alert('以下の項目が長すぎて様式の欄に収まりません。短くしてください。\n\n' + tooLong.join('\n'));
       return;
     }
+
+    // 2) 商品レイアウトの判定・チェック（タイトルが様式の1行幅に収まらない場合は
+    //    ここでエラー表示して止める。黙って切らない。詳細説明が収まらない場合は
+    //    エラーではなく続紙（別紙）に自動的に切り替わる）
+    var layout = tscaBuildFormLayout(helv, helvBold, f.products);
+    if (layout.errors.length) {
+      alert('以下の内容が様式の1行に収まりません。短くしてください。\n\n' + layout.errors.join('\n'));
+      return;
+    }
+    f.layoutMode = layout.mode;
+    f.needsContinuation = layout.needsContinuation;
+
     tscaProceedToConfirm(f);
   }).catch(function(err) {
-    console.error('TSCA description wrap check error', err);
-    alert('商品説明のチェックに失敗しました: ' + (err && err.message ? err.message : String(err)));
+    console.error('TSCA form validation error', err);
+    alert('入力内容のチェックに失敗しました: ' + (err && err.message ? err.message : String(err)));
   });
 }
 
-/** 商品説明の行数チェック通過後、確認画面を構築して表示する */
+/** 各種チェック通過後、確認画面を構築して表示する。商品リスト全件を表示する。 */
 function tscaProceedToConfirm(f) {
   state.tsca.form = f;
 
@@ -2742,12 +3134,43 @@ function tscaProceedToConfirm(f) {
     ['証明区分', f.certType === 'positive' ? 'Positive Certification' : 'Negative Certification'],
     ['Certifier name', f.certifierName],
     ['Certifier phone', f.certifierPhone || '(未入力)'],
-    ['Certifier email', f.certifierEmail || '(未入力)'],
-    ['商品説明', f.productDesc],
-    ['Company name', f.companyName || '(未入力・任意)'],
-    ['Company address', f.companyAddress || '(未入力・任意)'],
-    ['Certifier title', f.certifierTitle || '(未入力・任意)']
+    ['Certifier email', f.certifierEmail || '(未入力)']
   ];
+
+  var multi = f.products.length > 1;
+  var descLabel = multi ? ('商品（' + f.products.length + '件）') : '商品';
+  var descValue = f.products.map(function(p, i) {
+    var head = (multi ? (i + 1) + '. ' : '') + p.title;
+    return p.description ? (head + '\n' + p.description) : head;
+  }).join('\n\n');
+  rows.push([descLabel, descValue]);
+
+  var rowsCount = TSCA_COORD.descRows.length;
+  var layoutNote = '';
+  if (f.layoutMode === 'single') {
+    layoutNote = '様式の1行目に通関用タイトル、2行目以降に詳細説明を記載します。';
+  } else if (f.layoutMode === 'single-continuation') {
+    layoutNote = '詳細説明が様式の残り' + (rowsCount - 1) + '行に収まらないため、様式にはタイトルと「' +
+      TSCA_DETAILS_NOTE + '」を記載し、詳細説明は続紙（別紙）に記載します。';
+  } else if (f.layoutMode === 'titles') {
+    layoutNote = '様式の各行に各商品の通関用タイトルを記載し、' +
+      (f.needsContinuation
+        ? '全商品のタイトルと詳細説明を続紙（別紙）に記載します' +
+          (f.products.length >= rowsCount
+            ? '（様式に空き行が無いため「' + TSCA_DETAILS_NOTE + '」の行は省略されます）。'
+            : '（空き行に「' + TSCA_DETAILS_NOTE + '」を記載します）。')
+        : '詳細説明の入力が無いため続紙は付きません。');
+  } else if (f.layoutMode === 'overflow') {
+    layoutNote = '商品が' + f.products.length + '件（8件以上）のため、様式には最初の' + (rowsCount - 1) +
+      '件のタイトルと「+ ' + (f.products.length - (rowsCount - 1)) + ' more items (see attached product list)」を記載し、' +
+      '全商品のタイトルと詳細説明を続紙（別紙）に記載します。';
+  }
+  if (layoutNote) rows.push(['出力形式', layoutNote]);
+
+  rows.push(['Company name', f.companyName || '(未入力・任意)']);
+  rows.push(['Company address', f.companyAddress || '(未入力・任意)']);
+  rows.push(['Certifier title', f.certifierTitle || '(未入力・任意)']);
+
   var table = document.getElementById('tscaConfirmTable');
   table.innerHTML = '';
   rows.forEach(function(r) {
@@ -2826,6 +3249,56 @@ function tscaWrapDescription(font, text, maxWidth, maxLines) {
   return { lines: lines, lineCount: lines.length, overflow: lines.length > maxLines };
 }
 
+/** 続紙（別紙）ページ群を outDoc に追加し、全商品を「番号＋タイトル（太字）」＋
+ *  その下に詳細説明（改行保持・折り返し）の形式で描画する。
+ *  様式（テンプレート）そのものは改変せず、まっさらなレターサイズページを追加する。
+ *  1ページに収まらない場合は複数ページに分ける。同じPDFファイル内に追加されるだけで、
+ *  出力は最後まで1つのPDFファイルのまま。 */
+function tscaDrawContinuationPages(outDoc, helv, helvBold, products, waybill, dateStr) {
+  var black = PDFLib.rgb(0, 0, 0);
+  var pageWidth = 612, pageHeight = 792;
+  var marginLeft = 72, marginRight = 72, marginTop = 72, marginBottom = 72;
+  var maxWidth = pageWidth - marginLeft - marginRight;
+  var titleSize = 12, headerSize = 10, bodySize = 10, lineHeight = 14;
+  var indent = 24; // 番号（"1." 等）ぶんのぶら下げインデント
+  var itemMaxWidth = maxWidth - indent;
+
+  var page = null;
+  var y = 0;
+
+  function newPage() {
+    page = outDoc.addPage([pageWidth, pageHeight]);
+    y = pageHeight - marginTop;
+    page.drawText('TSCA Certification - Product List (continued)', { x: marginLeft, y: y, size: titleSize, font: helvBold, color: black });
+    y -= titleSize + 6;
+    var refLine = waybill ? ('Waybill: ' + waybill) : ('Date: ' + (dateStr || ''));
+    page.drawText(refLine, { x: marginLeft, y: y, size: headerSize, font: helv, color: black });
+    y -= headerSize + 14;
+  }
+
+  newPage();
+
+  products.forEach(function(p, idx) {
+    var label = (idx + 1) + '.';
+    var titleWrap = tscaWrapDescription(helvBold, p.title || '', itemMaxWidth, Number.MAX_SAFE_INTEGER);
+    titleWrap.lines.forEach(function(line, li) {
+      if (y < marginBottom + lineHeight) newPage();
+      if (li === 0) page.drawText(label, { x: marginLeft, y: y, size: bodySize, font: helvBold, color: black });
+      page.drawText(line, { x: marginLeft + indent, y: y, size: bodySize, font: helvBold, color: black });
+      y -= lineHeight;
+    });
+    if (p.description) {
+      var descWrap = tscaWrapDescription(helv, p.description, itemMaxWidth, Number.MAX_SAFE_INTEGER);
+      descWrap.lines.forEach(function(line) {
+        if (y < marginBottom + lineHeight) newPage();
+        page.drawText(line, { x: marginLeft + indent, y: y, size: bodySize, font: helv, color: black });
+        y -= lineHeight;
+      });
+    }
+    y -= 6; // 商品間の余白
+  });
+}
+
 /** PDF生成本体。AcroFormは使わず、Helveticaテキストとチェックマークのポリラインを
  *  様式PDFの2ページ目に直接描画してフラット化する。 */
 function tscaGeneratePdf() {
@@ -2875,10 +3348,12 @@ function tscaGeneratePdf() {
           })(copiedPages[0].node);
           return Promise.all([
             outDoc.embedFont(PDFLib.StandardFonts.Helvetica),
-            outDoc.embedFont(PDFLib.StandardFonts.HelveticaOblique)
+            outDoc.embedFont(PDFLib.StandardFonts.HelveticaOblique),
+            outDoc.embedFont(PDFLib.StandardFonts.HelveticaBold)
           ]).then(function(fonts) {
             var helv = fonts[0];
             var helvOblique = fonts[1];
+            var helvBold = fonts[2];
             var page = outDoc.getPage(0);
             var black = PDFLib.rgb(0, 0, 0);
 
@@ -2887,23 +3362,45 @@ function tscaGeneratePdf() {
               page.drawText(text, { x: coord.x, y: coord.y, size: TSCA_FONT_SIZE, font: font || helv, color: black });
             }
 
+            /** 幅チェック付きの描画。収まらない場合はフォントサイズを段階的に縮小（10pt→最小7pt）する。
+             *  blocking!==false のときは最小サイズでも収まらなければエラーを投げてPDF生成を止める。
+             *  blocking===false のときは最小サイズで best-effort 描画する（ブロックしない）。 */
+            function drawFitted(text, coord, maxWidth, font, fieldLabel, blocking) {
+              if (!text) return;
+              var size = tscaFitFontSize(font, text, maxWidth);
+              if (size == null) {
+                if (blocking === false) {
+                  size = TSCA_MIN_FONT_SIZE;
+                } else {
+                  throw new Error((fieldLabel || '入力内容') + 'が長すぎて様式の欄に収まりません。短くしてください。');
+                }
+              }
+              page.drawText(text, { x: coord.x, y: coord.y, size: size, font: font, color: black });
+            }
+
             draw(f.date, TSCA_COORD.date);
             draw(f.waybill, TSCA_COORD.waybill);
-            draw(f.companyName, TSCA_COORD.companyName);
-            draw(f.companyAddress, TSCA_COORD.companyAddress);
-            draw(f.certifierName, TSCA_COORD.certifierName);
-            draw(f.certifierTitle, TSCA_COORD.certifierTitle);
-            draw(f.certifierPhone, TSCA_COORD.certifierPhone);
-            draw(f.certifierEmail, TSCA_COORD.certifierEmail);
-            draw(f.certifierName, TSCA_COORD.signature, helvOblique);
+            drawFitted(f.companyName,    TSCA_COORD.companyName,    TSCA_FIELD_WIDTH.companyName,    helv, 'Company name');
+            drawFitted(f.companyAddress, TSCA_COORD.companyAddress, TSCA_FIELD_WIDTH.companyAddress, helv, 'Company address');
+            drawFitted(f.certifierName,  TSCA_COORD.certifierName,  TSCA_FIELD_WIDTH.certifierName,  helv, 'Certifier name');
+            drawFitted(f.certifierTitle, TSCA_COORD.certifierTitle, TSCA_FIELD_WIDTH.certifierTitle, helv, 'Certifier title');
+            drawFitted(f.certifierPhone, TSCA_COORD.certifierPhone, TSCA_FIELD_WIDTH.certifierPhone, helv, 'Certifier phone');
+            drawFitted(f.certifierEmail, TSCA_COORD.certifierEmail, TSCA_FIELD_WIDTH.certifierEmail, helv, 'Certifier email');
+            // signatureはCertifier nameと同じ文字列を使う。Certifier name自体は既に幅チェック済みで、
+            // signature欄の方が幅に余裕があるため通常はそのまま収まるが、念のためbest-effortで縮小する
+            // （spec上はsignatureを明示的なブロッキング対象にしていないため、ここではブロックしない）。
+            drawFitted(f.certifierName, TSCA_COORD.signature, TSCA_FIELD_WIDTH.signature, helvOblique, 'Certifier signature', false);
 
-            var wrap = tscaWrapDescription(helv, f.productDesc, TSCA_DESC_MAX_WIDTH, TSCA_COORD.descRows.length);
-            if (wrap.overflow) {
-              throw new Error('商品説明が' + TSCA_COORD.descRows.length + '行に収まりません（現在' + wrap.lineCount + '行相当）。フォームに戻って短くしてください。');
+            // 商品欄: 確認画面前と同じレイアウト判定を再実行し、収まらないタイトルが
+            // あればここでもエラーにして止める（黙って切らない）。
+            var layout = tscaBuildFormLayout(helv, helvBold, f.products);
+            if (layout.errors.length) {
+              throw new Error('様式の1行に収まらない内容があります。フォームに戻って短くしてください。\n' + layout.errors.join('\n'));
             }
-            wrap.lines.forEach(function(line, i) {
-              if (TSCA_COORD.descRows[i]) draw(line, TSCA_COORD.descRows[i]);
-            });
+            tscaDrawFormProductLines(page, helv, helvBold, layout);
+            if (layout.needsContinuation) {
+              tscaDrawContinuationPages(outDoc, helv, helvBold, f.products, f.waybill, f.date);
+            }
 
             var box = TSCA_CHECKBOX[f.certType === 'positive' ? 'positive' : 'negative'];
             var pts = TSCA_CHECK_OFFSETS.map(function(o) {
@@ -2946,6 +3443,8 @@ function tscaGeneratePdf() {
 /** TSCA機能を初期状態に戻してホームへ */
 function tscaStartOver() {
   state.tsca.form = null;
+  state.tsca.products = [];
+  state.tsca.editingIndex = null;
   showSection('sectionHome');
 }
 
@@ -2953,8 +3452,16 @@ function tscaStartOver() {
 // TSCA証明書機能: イベント登録
 // -------------------------------------------------------
 window.addEventListener('load', function() {
-  document.getElementById('tscaManualLink').addEventListener('click', openTscaSection);
+  document.getElementById('tscaManualLink').addEventListener('click', function() {
+    // 下書き（#tscaProductDesc）は自動確定しない。確定は「＋商品リストに追加」
+    // 「確認画面へ進む」「AI追加の直前」の明示操作のみで行う（黙って商品リストに
+    // 確定され、次回セッションへ持ち越されるのを防ぐため）。下書きの内容はテキスト
+    // エリアにそのまま残る。
+    openTscaSection();
+  });
   document.getElementById('backFromTsca').addEventListener('click', function() {
+    // 同上。「戻る」でも下書きは確定しない（テキストエリアに残したまま、消しも
+    // 確定もしない）。
     showSection('sectionHome');
   });
   var tscaSettingsHintLink = document.getElementById('tscaSettingsHintLink');
@@ -2975,6 +3482,23 @@ window.addEventListener('load', function() {
   });
 
   document.getElementById('tscaAiDescBtn').addEventListener('click', tscaGenerateDescription);
+  document.getElementById('tscaAddProductBtn').addEventListener('click', function() {
+    var msgEl = document.getElementById('tscaAiMsg');
+    var committed = tscaCommitDraft();
+    if (!committed) {
+      showMessage(msgEl, 'error', '通関用タイトル（または詳細説明）を入力してから追加してください。');
+      return;
+    }
+    msgEl.style.display = 'none';
+  });
+  var tscaCancelEditBtn = document.getElementById('tscaCancelEditBtn');
+  if (tscaCancelEditBtn) tscaCancelEditBtn.addEventListener('click', tscaCancelEdit);
+  document.getElementById('tscaAiFromPageBtn').addEventListener('click', function() {
+    // 第3引数 false: 既にフォーム表示中なので画面遷移（openTscaSection）を行わない。
+    // openTscaSection → tscaEnterForm は「商品0件・下書き空」のとき入力済みの
+    // Waybill・証明区分・Certifier欄を初期値でリセットしてしまうため（B-2対策）。
+    runTscaAiFromPageFlow(this, document.getElementById('tscaAiMsg'), false);
+  });
   document.getElementById('tscaGoToConfirmBtn').addEventListener('click', tscaGoToConfirm);
 
   document.getElementById('tscaConfirmCheck').addEventListener('change', function() {

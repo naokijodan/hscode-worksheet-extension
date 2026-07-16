@@ -261,6 +261,15 @@ select:focus {
   margin-bottom: 8px;
 }
 
+.btn-xs {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: normal;
+  width: auto;
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+
 .button-row {
   display: flex;
   gap: 10px;
@@ -1020,4 +1029,65 @@ select:focus {
   font-size: 12px;
   color: #333;
   line-height: 1.8;
+}
+
+/* 商品リスト（複数商品対応・同梱発送） */
+.tsca-product-list {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.tsca-product-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #333;
+}
+.tsca-product-row + .tsca-product-row {
+  border-top: 1px solid #eee;
+}
+.tsca-product-row-editing {
+  background: #FFF8E1;
+}
+
+.tsca-product-num {
+  flex-shrink: 0;
+  font-weight: bold;
+  color: #555;
+}
+
+.tsca-product-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tsca-product-del {
+  color: #b3261e;
+}
+
+@media (prefers-color-scheme: dark) {
+  .tsca-product-list {
+    background: #1e1e1e;
+    border-color: #444;
+  }
+  .tsca-product-row {
+    color: #ddd;
+  }
+  .tsca-product-row + .tsca-product-row {
+    border-top-color: #333;
+  }
+  .tsca-product-row-editing {
+    background: #4a3f1a;
+  }
+  .tsca-product-num {
+    color: #aaa;
+  }
 }
