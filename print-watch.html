@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Watch Worksheet — 印刷</title>
+  <style>
+    /* ===========================================
+       print-watch.html — Watch Worksheet 印刷専用ページ
+       このページはサイドパネルとは独立した通常タブで開く。
+       ワークシートの表だけが表示される。
+       =========================================== */
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 16px;
+      background: #fff;
+      color: #333;
+      font-size: 11px;
+    }
+
+    /* 画面表示時のみ：印刷ボタンと注意書きを表示 */
+    .screen-only {
+      margin-bottom: 14px;
+    }
+
+    .screen-only h2 {
+      font-size: 14px;
+      margin: 0 0 8px 0;
+    }
+
+    .print-note {
+      background: #FFF9C4;
+      border: 1px solid #F9A825;
+      border-radius: 4px;
+      padding: 8px 10px;
+      font-size: 11px;
+      line-height: 1.5;
+      margin-bottom: 10px;
+    }
+
+    .btn-print {
+      display: inline-block;
+      padding: 10px 24px;
+      background: #43A047;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+    }
+
+    .btn-print:hover {
+      background: #388E3C;
+    }
+
+    /* ワークシートテーブル */
+    .worksheet-table {
+      border-collapse: collapse;
+      width: 100%;
+      font-family: Arial, sans-serif;
+      font-size: 11px;
+    }
+
+    .worksheet-table td {
+      border: 1px solid #000;
+      padding: 3px 6px;
+      vertical-align: middle;
+      height: 22px;
+    }
+
+    .ws-title {
+      background-color: #4472C4;
+      color: #FFFFFF;
+      font-weight: bold;
+      font-size: 15px;
+      text-align: center;
+      height: 32px;
+    }
+
+    .ws-header {
+      background-color: #4472C4;
+      color: #FFFFFF;
+      font-weight: bold;
+      text-align: center;
+      height: 30px;
+    }
+
+    .ws-label {
+      background-color: #E7E6E6;
+      font-weight: bold;
+      white-space: nowrap;
+    }
+
+    .ws-label-sub {
+      background-color: #F2F2F2;
+      font-weight: normal;
+      font-style: italic;
+      white-space: nowrap;
+    }
+
+    .ws-data {
+      background-color: #FFFFFF;
+      text-align: center;
+    }
+
+    .ws-value-breakout td {
+      background-color: #FFF2CC !important;
+    }
+
+    .ws-company td {
+      background-color: #D9E1F2 !important;
+    }
+
+    /* ===========================================
+       印刷用スタイル
+       =========================================== */
+    @media print {
+      .screen-only {
+        display: none !important;
+      }
+
+      body {
+        padding: 0;
+        margin: 0;
+      }
+
+      .worksheet-table {
+        width: 100%;
+        font-size: 9pt;
+        page-break-inside: avoid;
+      }
+
+      .worksheet-table td {
+        padding: 2px 4px;
+      }
+
+      * {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      @page {
+        size: A4 portrait;
+        margin: 15mm 12mm;
+      }
+    }
+
+    /* ===========================================
+       ローディング表示
+       =========================================== */
+    #loadingMsg {
+      padding: 20px;
+      font-size: 14px;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="loadingMsg">データを読み込んでいます...</div>
+
+  <div class="screen-only" id="screenHeader" style="display:none;">
+    <h2>Watch Worksheet作成君 — 印刷プレビュー</h2>
+    <div class="print-note">
+      <strong>背景色について：</strong>ブラウザの印刷ダイアログで <strong>「背景のグラフィック」をオン</strong>にすると、
+      セクションの背景色（青・黄・水色）が正しく印刷されます。
+    </div>
+    <button class="btn-print" id="printBtn">印刷 / PDFとして保存</button>
+  </div>
+
+  <table class="worksheet-table" id="worksheetTable" style="display:none;"></table>
+
+  <script src="print-watch.js"></script>
+</body>
+</html>

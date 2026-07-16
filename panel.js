@@ -62,7 +62,9 @@ var state = {
     pageCount: null,
     products: [],       // 作業中の商品リスト: [{ description }]。同梱発送など複数商品分をここに貯める
     editingIndex: null, // 商品リストの何番目を編集中か（nullなら新規追加モード）
-    form: null   // 確認画面へ進んだ時点のスナップショット（form.products が確定した商品リスト）
+    form: null,  // 確認画面へ進んだ時点のスナップショット（form.products が確定した商品リスト）
+    completed: false // PDFダウンロード成功済みフラグ。trueのまま「ホームへ」を押すとフォームを完全クリアする。
+                     // フォームに戻って編集を再開した時点でfalseに戻す（編集内容を黙って消さないため）。
   },
 };
 
@@ -72,7 +74,8 @@ var state = {
 function showSection(id) {
   var sections = ['sectionHome', 'sectionBrowse', 'sectionSettings', 'sectionWizard',
                   'sectionResult', 'sectionConfirm', 'sectionPrint',
-                  'sectionCpscWiz', 'sectionCpscResult', 'sectionTsca'];
+                  'sectionCpscWiz', 'sectionCpscResult', 'sectionTsca',
+                  'watch_sectionInput', 'watch_sectionWizard', 'watch_sectionPrint'];
   sections.forEach(function(sid) {
     var el = document.getElementById(sid);
     if (el) el.style.display = (sid === id) ? '' : 'none';
@@ -2248,13 +2251,21 @@ function showTscaAiResultBadge(show) {
 }
 
 /** AI生成の共通システムプロンプト（通関用タイトル＋詳細説明のJSONを返させる）。
- *  title の文字数の目安（約70〜80文字・最大85文字）は、様式の商品説明欄の拡張後の幅
+ *  title の文字数の目安（合計で最大85文字）は、様式の商品説明欄の拡張後の幅
  *  (TSCA_DESC_MAX_WIDTH=450pt) に太字(Helvetica-Bold 10pt)で収まる文字数を
- *  pdf-libのwidthOfTextAtSizeで実測して決めた（実タイトル例5種の平均5.11pt/文字 →
- *  450ptで約88文字。太字・大文字が多い場合の余裕をみて上限85文字とした）。
- *  タイトルが実際に1行幅へ収まるかは、確認画面へ進む前とPDF生成時の両方で機械的に
+ *  pdf-libのwidthOfTextAtSizeで実測して決めた（平均約5.1pt/文字 → 450ptで約88文字。
+ *  太字・大文字が多い場合の余裕をみて上限85文字とした）。
+ *  玩具・コレクティブルの年齢文 ", Not for Children (Age 15+)" は28文字・実測129.2pt
+ *  固定なので、年齢文より前の本文は約55文字以下を目安とする（55文字×約5.1pt＋129.2pt
+ *  ≒ 410pt < 450pt。85文字上限との整合も実測確認済み）。
+ *  タイトルが実際に1行幅へ収まるかは、AI生成直後（tscaFinalizeAiTitle。超過時は
+ *  1回だけAIに短縮を再依頼）と、確認画面へ進む前・PDF生成時の両方で機械的に
  *  再チェックされる（収まらない場合はエラー表示して止める。黙って切らない）。
- *  年齢要件（For Ages X+）のルールは、HSコード分析側の既存プロンプト(callOpenAI)と同一。
+ *  年齢文の方針（2026-07-16 ユーザー承認）: コレクター品・玩具は Age 15+ に統一、
+ *  トレカ・カードゲームのみ Age 13+。ページ上の他セラー由来の年齢表記（4+等）は無視。
+ *  タイトルのConditionは「Used」のみ（2026-07-16 ユーザー指示。"(secondhand)"は
+ *  冗長のためタイトルから削除して定型部分を13字軽くする。description側はCPSC上の
+ *  理由から従来どおり "Used (secondhand)" を維持）。
  *  sourceLabel は元情報の呼び方（"product page information" or "given text"）。 */
 function tscaAiSystemPrompt(sourceLabel) {
   return [
@@ -2263,15 +2274,37 @@ function tscaAiSystemPrompt(sourceLabel) {
     'Given the ' + sourceLabel + ' below, produce BOTH of the following in English.',
     'Factual, no exaggeration, no marketing or promotional language.',
     '1. "title" - a short customs product title for ONE line of the form:',
-    '   - ONE single line only (no line breaks). Target approximately 70-80 characters, NEVER exceed 85 characters.',
+    '   - ONE single line only (no line breaks). NEVER exceed 85 characters in total, including the',
+    '     age statement. The 85-character limit is an ABSOLUTE requirement, not a target.',
     '   - Prioritize fitting over completeness: shorten or omit the brand name if needed.',
-    '   - Format: <Condition> <short item type> "<product name>"[, by <brand>][ For Ages X+].',
-    '   - Age requirement rules (append at the END of the title when applicable):',
-    '     * For anime/manga figures and collectibles (display items, not toys for actual play): append "For Ages 15+".',
-    '     * For trading cards and card games: append "For Ages 13+".',
-    '     * For toys meant for actual play with a clear target age: append "For Ages X+" using that age.',
-    '     * Omit the age requirement if the product is not a toy or collectible.',
-    '   - Example: Used (secondhand) figure "Ultimate Madoka & Homura" For Ages 15+',
+    '   - For toys and collectibles (see the age statement rules below), use this exact format:',
+    '     <Condition> Collectible <short item type> "<product name>"[, by <brand>], Not for Children (Age NN+)',
+    '   - For all other products (kitchenware, clothing, electronics, etc.), use this format',
+    '     with NO "Collectible" and NO age statement:',
+    '     <Condition> <short item type> "<product name>"[, by <brand>]',
+    '   - Age statement rules (FIXED values, appended at the END of the title):',
+    '     * Trading cards and card games: append ", Not for Children (Age 13+)". Always exactly 13+.',
+    '     * ALL other toys and collectibles - anime/manga figures, character goods, plush toys,',
+    '       model kits, dolls, AND toys meant for actual play: append ", Not for Children (Age 15+)".',
+    '       These are exported as collector items for adults, so Age 15+ is ALWAYS used,',
+    '       even for products originally marketed to young children.',
+    '     * IGNORE any age label that appears in the ' + sourceLabel + ' (e.g. "4+", "Ages 3 and up",',
+    '       "対象年齢6歳以上"). Such labels come from the manufacturer or other sellers and MUST NOT be',
+    '       copied into the title. Use ONLY the fixed values above: Age 13+ for trading cards and',
+    '       card games, Age 15+ for every other toy or collectible.',
+    '     * Omit the age statement (and the word "Collectible") only when the product is not a toy or collectible.',
+    '   - Character budget (how to ALWAYS stay within 85 characters):',
+    '     * The fixed parts (condition + "Collectible" + item type + quotes + age statement)',
+    '       already use about 50-60 characters, so keep the quoted product name to AT MOST',
+    '       20 characters. For long names keep only the core character/product name',
+    '       (e.g. "Ultimate Madoka & Devil Homura" -> "Madoka & Homura").',
+    '     * OMIT ", by <brand>" whenever the total would otherwise exceed 85 characters.',
+    '     * Use the shortest generic noun for the item type (figure / plush / cards / model kit).',
+    '   - The fixed suffix ", Not for Children (Age 15+)" is about 28 characters, so keep the part',
+    '     of the title before the suffix to roughly 55 characters or less.',
+    '   - Example (figure): Used Collectible figure "Son Goku", Not for Children (Age 15+)',
+    '   - Example (trading card): Used Collectible trading card "Pikachu", Not for Children (Age 13+)',
+    '   - Example (non-toy, no age statement): Used ceramic coffee mug "Sakura Blossom"',
     '2. "description" - a detailed factual description:',
     '   - One factual sentence starting with the condition, then item type, product name in quotes, and brand,',
     '     followed by a "Materials:" bullet list. Maximum 350 characters total.',
@@ -2282,9 +2315,12 @@ function tscaAiSystemPrompt(sourceLabel) {
     '     - <material name (full chemical name in parentheses if applicable)>: approx. <percent>%',
     '     - <material name>: approx. <percent>%',
     'Condition rules (both the title and the description MUST state the condition):',
-    '- If the ' + sourceLabel + ' indicates a secondhand item (中古, used, pre-owned, 目立った傷や汚れなし, etc.), write "Used (secondhand)".',
+    '- In the "title", write the condition as just "Used" or "New". Do NOT write "(secondhand)"',
+    '  in the title - the one-line form is too narrow for it.',
+    '- In the "description", write "Used (secondhand)" or "New" (KEEP "(secondhand)" there).',
+    '- If the ' + sourceLabel + ' indicates a secondhand item (中古, used, pre-owned, 目立った傷や汚れなし, etc.), the item is Used.',
     '- Write "New" ONLY when the ' + sourceLabel + ' clearly states the item is new/unused/unopened (新品, 未使用, 未開封, etc.).',
-    '- If the condition cannot be determined, write "Used (secondhand)" (items handled by this tool come from Japanese secondhand marketplaces).',
+    '- If the condition cannot be determined, treat the item as Used (items handled by this tool come from Japanese secondhand marketplaces).',
     'Material rules (for the description):',
     '- If the ' + sourceLabel + ' states materials (素材, 材質, "Material", etc.), use them, translated into standard English material names. This takes priority.',
     '- Otherwise use the industry-standard composition for the product category (e.g. painted finished figures = PVC approx. 90% / ABS approx. 10%; trading cards and board games = paper and cardboard; plush toys = polyester fabric and stuffing).',
@@ -2293,7 +2329,7 @@ function tscaAiSystemPrompt(sourceLabel) {
     '- List at most 4 materials.',
     'Return ONLY a single JSON object with exactly the keys "title" and "description".',
     'No markdown, no code fences, no explanation. Example output:',
-    '{"title": "Used (secondhand) figure \\"Son Goku\\", by Banpresto For Ages 15+", "description": "Used (secondhand) painted finished figure \\"Son Goku\\" by Banpresto.\\nMaterials:\\n- PVC (polyvinyl chloride): approx. 90%\\n- ABS (acrylonitrile butadiene styrene): approx. 10%"}'
+    '{"title": "Used Collectible figure \\"Son Goku\\", Not for Children (Age 15+)", "description": "Used (secondhand) painted finished figure \\"Son Goku\\" by Banpresto.\\nMaterials:\\n- PVC (polyvinyl chloride): approx. 90%\\n- ABS (acrylonitrile butadiene styrene): approx. 10%"}'
   ].join('\n');
 }
 
@@ -2390,17 +2426,30 @@ function runTscaAiFromPageFlow(btn, msg, openSection) {
       return;
     }
     callTscaDescriptionAi(pageInfo, function(err, result) {
-      btn.disabled = false;
-      msg.style.display = 'none';
-      if (openSection) openTscaSection();
       if (err || !result) {
+        btn.disabled = false;
+        msg.style.display = 'none';
+        if (openSection) openTscaSection();
         var aiMsg2 = document.getElementById('tscaAiMsg');
         showMessage(aiMsg2, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '不明なエラー') + '。商品情報は手動で入力してください。');
         return;
       }
-      document.getElementById('tscaProductTitle').value = result.title;
-      document.getElementById('tscaProductDesc').value = result.description;
-      showTscaAiResultBadge(true);
+      // 幅チェック→（超過なら1回だけ自動短縮リトライ）→年齢ガード。
+      // リトライ中もボタンは無効のまま・進行表示はボタン脇の msg に出る。
+      // エラーがあってもタイトルは欄に入れたまま（ユーザーが修正できるように）、
+      // 確認画面へ進む前の最終ゲート（tscaGoToConfirm）でも同じ検査で再度ブロックされる。
+      tscaFinalizeAiTitle(result, msg, function(finalTitle, errText) {
+        btn.disabled = false;
+        msg.style.display = 'none';
+        if (openSection) openTscaSection();
+        document.getElementById('tscaProductTitle').value = finalTitle;
+        document.getElementById('tscaProductDesc').value = result.description;
+        showTscaAiResultBadge(true);
+        if (errText) {
+          var aiMsg3 = document.getElementById('tscaAiMsg');
+          showMessage(aiMsg3, 'error', errText);
+        }
+      });
     });
   });
 }
@@ -2673,6 +2722,11 @@ function tscaResetTemplate() {
 function tscaEnterForm() {
   tscaUpdateTemplateStatus();
 
+  // フォームに入った時点で「PDF完了」フラグを解除する（＝入力保持モードに戻す）。
+  // PDF生成後にフォームへ戻って編集を続けるケースで、後から「ホームへ」を押しても
+  // 編集内容が黙って消えないようにするため。
+  state.tsca.completed = false;
+
   var draftEl = document.getElementById('tscaProductDesc');
   var titleDraftEl = document.getElementById('tscaProductTitle');
   var isFreshStart = (state.tsca.products.length === 0) && !draftEl.value.trim() &&
@@ -2732,14 +2786,25 @@ function tscaGenerateDescription() {
   showMessage(msgEl, 'info', '生成中…');
 
   tscaCallAiJson(tscaAiSystemPrompt('given text'), source, function(err, result) {
-    btn.disabled = false;
     if (err || !result) {
+      btn.disabled = false;
       showMessage(msgEl, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '不明なエラー'));
       return;
     }
-    titleEl.value = result.title;
-    textEl.value = result.description;
-    msgEl.style.display = 'none';
+    // 幅チェック→（超過なら1回だけ自動短縮リトライ）→年齢ガード。
+    // リトライ中もボタンは無効のまま・進行表示は msgEl に出る。
+    // エラーがあってもタイトルは欄に入れたまま（ユーザーが修正できるように）、
+    // 確認画面へ進む前の最終ゲート（tscaGoToConfirm）でも同じ検査で再度ブロックされる。
+    tscaFinalizeAiTitle(result, msgEl, function(finalTitle, errText) {
+      btn.disabled = false;
+      titleEl.value = finalTitle;
+      textEl.value = result.description;
+      if (errText) {
+        showMessage(msgEl, 'error', errText);
+        return;
+      }
+      msgEl.style.display = 'none';
+    });
   });
 }
 
@@ -2763,6 +2828,133 @@ function tscaNormalizeProductText(raw) {
 /** タイトル入力欄の内容を1行に正規化する（改行・連続空白は1スペースに） */
 function tscaNormalizeTitleText(raw) {
   return (raw || '').replace(/\s+/g, ' ').trim();
+}
+
+// -------------------------------------------------------
+// TSCA証明書: タイトルの年齢表記の機械検査
+// -------------------------------------------------------
+
+/** 年齢表記エラーの共通メッセージ（AI生成直後・確認前検証で同一文言を使う） */
+var TSCA_AGE_LABEL_ERROR =
+  '年齢表記は Age 13+（トレカ・カードゲーム）または Age 15+（その他の玩具・コレクター品）' +
+  'のみ使用できます。タイトルを修正してください';
+
+/** タイトル内の年齢表記を機械的に検出し、13/15 以外の年齢が含まれていれば
+ *  その表記文字列の配列を返す（問題なければ空配列）。
+ *  AIがページ上の他セラー由来の年齢表記（4+ 等）をコピーしてしまう問題への
+ *  決定的なガード。プロンプトの指示には頼らない。黙って書き換え・削除はしない
+ *  （検出したら呼び出し側でエラー表示して止め、修正はユーザーが行う）。
+ *
+ *  検出パターン（大文字小文字問わず）:
+ *   A) 「Age/Ages + 数字 + (+ / and up / or older / and over / & up)」の組み合わせ。
+ *      例: "Age 13+" "For Ages 4+" "Ages 3 and up" "AGE 6 & UP"
+ *      数字の後に + や and up 等の年齢マーカーを必須にすることで、
+ *      商品名中の "Ice Age 3" のような語を年齢と誤判定しない。
+ *   B) 裸の「数字+」。ただし誤検知を避けるため、
+ *      「数字がトークンの先頭（行頭・空白・カンマ・開き括弧・引用符の直後）で始まり、
+ *       かつ 数字+ が末尾またはカンマ直前（閉じ括弧・引用符は挟んでよい）にある」
+ *      場合のみ年齢とみなす。例: "... Toy 4+" "... (4+)" はB該当、
+ *      "RX-78-2" "TD-384" "Figure #4" は + が無い・トークン先頭でないため非該当。
+ *      "DMC-GF7+" のような型番末尾の + も、数字が英字・ハイフンに続いておりトークン
+ *      先頭でないため非該当。 */
+function tscaFindInvalidAgeLabels(title) {
+  var t = String(title || '');
+  var invalid = [];
+  var m, n;
+
+  // A) Age/Ages という語 + 数字 + 年齢マーカー
+  var reWord = /\bages?\s*:?\s*(\d{1,3})\s*(?:\+|(?:and|&|or)\s+(?:up|older|over|above))/gi;
+  while ((m = reWord.exec(t)) !== null) {
+    n = parseInt(m[1], 10);
+    if (n !== 13 && n !== 15) invalid.push(m[0].replace(/\s+/g, ' ').trim());
+  }
+
+  // B) 裸の「数字+」（トークン先頭始まり・末尾またはカンマ直前のみ）
+  var reBare = /(^|[\s,("'“])(\d{1,3})\s*\+(?=[)"'”]*\s*(?:$|,))/g;
+  while ((m = reBare.exec(t)) !== null) {
+    n = parseInt(m[2], 10);
+    if (n !== 13 && n !== 15) invalid.push(m[2] + '+');
+  }
+
+  // 重複表記を除去（AとBの両方に一致した場合など）
+  return invalid.filter(function(v, i) { return invalid.indexOf(v) === i; });
+}
+
+// -------------------------------------------------------
+// TSCA証明書: AI生成タイトルの幅チェック＋自動短縮リトライ
+// -------------------------------------------------------
+
+/** タイトル幅超過エラーの共通メッセージ */
+var TSCA_TITLE_WIDTH_ERROR =
+  'タイトルが様式の1行（英語で約85文字が上限の目安）に収まりません。' +
+  'タイトル欄を手動で短くしてください（商品名は核心部分だけ残す・ブランド名を外す等）。';
+
+/** タイトルが様式の1行幅（太字10pt・TSCA_DESC_MAX_WIDTH=450pt）に収まるかを判定して
+ *  cb(fits) を呼ぶ。確認前ゲート（tscaGoToConfirm→tscaBuildFormLayout）と同一基準。
+ *  PDFLibが使えない環境では判定せず true を返す（その場合も確認前ゲート・PDF生成時に
+ *  必ず同じ基準で再チェックされるため、すり抜けて出力されることはない）。 */
+function tscaTitleFitsWidth(title, cb) {
+  if (!title || typeof PDFLib === 'undefined') { cb(true); return; }
+  PDFLib.PDFDocument.create().then(function(doc) {
+    return doc.embedFont(PDFLib.StandardFonts.HelveticaBold);
+  }).then(function(bold) {
+    cb(bold.widthOfTextAtSize(title, TSCA_FONT_SIZE) <= TSCA_DESC_MAX_WIDTH);
+  }).catch(function() { cb(true); });
+}
+
+/** 幅超過タイトルの短縮をAIに1回だけ再依頼するときのシステムプロンプト。
+ *  Condition と年齢サフィックスは維持させ、商品名の短縮・ブランド省略だけを行わせる。 */
+function tscaShortenTitlePrompt() {
+  return [
+    'The customs product title below is too long to fit on one line of a US customs form.',
+    'Rewrite it so that the WHOLE title is 85 characters or fewer. This is an ABSOLUTE requirement.',
+    'Rules:',
+    '- Keep the same overall format and meaning. Do not add anything new.',
+    '- Keep the condition word at the start as just "Used" or "New". If the title starts with',
+    '  "Used (secondhand)", shorten that to "Used".',
+    '- If an age statement suffix like ", Not for Children (Age 15+)" is present, keep it',
+    '  EXACTLY unchanged at the end.',
+    '- Shorten the quoted product name to at most 20 characters, keeping only the core',
+    '  character/product name (e.g. "Ultimate Madoka & Devil Homura" -> "Madoka & Homura").',
+    '- Remove ", by <brand>" if needed.',
+    'Return ONLY a JSON object: {"title": "<shortened title>"}. No markdown, no explanation.'
+  ].join('\n');
+}
+
+/** AI生成直後のタイトル受け入れ共通処理。
+ *  1) 幅チェック（太字10pt・450pt。確認前ゲートと同一基準）
+ *  2) 超過していたら自動で「1回だけ」AIに短縮を再依頼（description は1回目の結果を
+ *     維持し、title だけ差し替える）。リトライ中は msgEl に進行表示を出す。
+ *  3) 最終タイトルに年齢ガード（tscaFindInvalidAgeLabels）を適用。
+ *  done(finalTitle, errText) を必ず1回呼ぶ。errText は null（問題なし）または
+ *  ユーザー向けエラーメッセージ（幅超過と年齢violationの両方があれば改行で併記）。
+ *  このコードがタイトルを機械的に切り捨てることはない（黙って切らない原則）。
+ *  超過が解消しない場合もタイトルは欄に残し、修正はユーザーが行う。 */
+function tscaFinalizeAiTitle(result, msgEl, done) {
+  function finish(title, tooWide) {
+    var errs = [];
+    if (tooWide) errs.push(TSCA_TITLE_WIDTH_ERROR);
+    var bad = tscaFindInvalidAgeLabels(title);
+    if (bad.length) errs.push(TSCA_AGE_LABEL_ERROR + '（検出: ' + bad.join(', ') + '）');
+    done(title, errs.length ? errs.join('\n') : null);
+  }
+
+  tscaTitleFitsWidth(result.title, function(fits) {
+    if (fits) { finish(result.title, false); return; }
+
+    // 自動短縮リトライ（1回だけ）
+    showMessage(msgEl, 'info', 'タイトルが長いため短縮中…');
+    tscaCallAiJson(tscaShortenTitlePrompt(), result.title, function(err, retry) {
+      if (err || !retry || !retry.title) {
+        // リトライ失敗: 1回目のタイトルのまま超過エラーとして返す
+        finish(result.title, true);
+        return;
+      }
+      tscaTitleFitsWidth(retry.title, function(fits2) {
+        finish(retry.title, !fits2);
+      });
+    });
+  });
 }
 
 /** 商品1件を {title, description} 形式に正規化して返す。
@@ -3074,6 +3266,21 @@ function tscaGoToConfirm() {
   }
   // 旧形式（descriptionのみ）のstateが残っていても壊れないよう、ここで正規化する
   f.products = state.tsca.products.map(tscaEffectiveProduct);
+
+  // 年齢表記の機械検査（確認画面へ進む前の最終ゲート）。
+  // AI生成・手入力・編集後のどの経路でも、確定済み商品リストの全タイトルをここで検査する。
+  // 13/15以外の年齢表記が1つでもあれば進めない（黙って書き換え・削除はしない）。
+  var ageErrors = [];
+  f.products.forEach(function(p, i) {
+    var bad = tscaFindInvalidAgeLabels(p.title);
+    if (bad.length) {
+      ageErrors.push('商品' + (i + 1) + ': 「' + bad.join('」「') + '」 — ' + p.title);
+    }
+  });
+  if (ageErrors.length) {
+    alert(TSCA_AGE_LABEL_ERROR + '。\n\n' + ageErrors.join('\n'));
+    return;
+  }
 
   if (typeof PDFLib === 'undefined') {
     alert('PDF処理ライブラリの読み込みに失敗しました。拡張機能を再読み込みしてください。');
@@ -3430,6 +3637,10 @@ function tscaGeneratePdf() {
       btn.disabled = false;
       btn.textContent = 'PDFを生成してダウンロード';
       document.getElementById('tscaDoneMsg').textContent = filename + ' をダウンロードしました。';
+      // ダウンロード成功。この状態で「ホームへ」を選んだ場合はフォームを完全クリアする
+      // （前回の商品リスト・Waybill等が次回に残らないようにする）。
+      // 作業途中（PDF未生成）の「ホームへ」は従来どおり入力保持（M-1対策は不変）。
+      state.tsca.completed = true;
       showTscaSub('tscaSubDone');
     }).catch(function(err) {
       console.error('TSCA PDF generation error', err);
@@ -3445,7 +3656,37 @@ function tscaStartOver() {
   state.tsca.form = null;
   state.tsca.products = [];
   state.tsca.editingIndex = null;
+  // 完了フラグも解除する（残したままだと、この後に新規作成した内容が
+  // 「ホームへ」で誤ってクリアされてしまうため）。
+  state.tsca.completed = false;
   showSection('sectionHome');
+}
+
+/** PDFダウンロード完了後に「ホームへ」を選んだときの完全クリア。
+ *  商品リスト・下書き・Waybill・証明区分・確認チェックを初期状態に戻す。
+ *  日付・Certifier・会社情報の各欄は、次回 tscaEnterForm() が
+ *  isFreshStart（商品0件・下書き空）と判定して従来どおり設定から再ロード・
+ *  再初期化するため、ここでは触らない（従来の新規開始時の初期化と同じ扱い）。 */
+function tscaClearAfterComplete() {
+  state.tsca.form = null;
+  state.tsca.products = [];
+  state.tsca.editingIndex = null;
+  state.tsca.completed = false;
+
+  var titleEl = document.getElementById('tscaProductTitle');
+  if (titleEl) titleEl.value = '';
+  var descEl = document.getElementById('tscaProductDesc');
+  if (descEl) descEl.value = '';
+  var waybillEl = document.getElementById('tscaWaybill');
+  if (waybillEl) waybillEl.value = '';
+  var negEl = document.getElementById('tscaCertNegative');
+  if (negEl) negEl.checked = true;
+  var posEl = document.getElementById('tscaCertPositive');
+  if (posEl) posEl.checked = false;
+  var checkEl = document.getElementById('tscaConfirmCheck');
+  if (checkEl) checkEl.checked = false;
+  var genBtn = document.getElementById('tscaGenerateBtn');
+  if (genBtn) genBtn.disabled = true;
 }
 
 // -------------------------------------------------------
@@ -3462,6 +3703,11 @@ window.addEventListener('load', function() {
   document.getElementById('backFromTsca').addEventListener('click', function() {
     // 同上。「戻る」でも下書きは確定しない（テキストエリアに残したまま、消しも
     // 確定もしない）。
+    // ただし PDFダウンロード完了後（state.tsca.completed）に「ホームへ」を選んだ
+    // 場合だけは、前回値が次回に残らないようフォームを完全クリアする。
+    // 作業途中（PDF未生成、またはPDF生成後に編集を再開してフラグが解除された状態）は
+    // 従来どおり入力保持。
+    if (state.tsca.completed) tscaClearAfterComplete();
     showSection('sectionHome');
   });
   var tscaSettingsHintLink = document.getElementById('tscaSettingsHintLink');
@@ -3510,4 +3756,1361 @@ window.addEventListener('load', function() {
   });
 
   document.getElementById('tscaStartOverBtn').addEventListener('click', tscaStartOver);
+
+  // フォーム内のどれかの欄を編集した時点でも「PDF完了」フラグを解除する
+  // （tscaEnterForm での解除に加えた保険。編集済みの内容が「ホームへ」で
+  // 黙ってクリアされる事故を確実に防ぐ）。
+  var tscaFormSub = document.getElementById('tscaSubForm');
+  if (tscaFormSub) {
+    ['input', 'change'].forEach(function(evt) {
+      tscaFormSub.addEventListener(evt, function() {
+        state.tsca.completed = false;
+      });
+    });
+  }
+});
+
+// =========================================================
+// Watch Worksheet作成君 機能（WatchWorksheet_Extension からの移植）
+// =========================================================
+//
+// 元ファイル: WatchWorksheet_Extension/panel.js（このファイルとは別拡張機能）
+// 移植時の変更点（挙動そのものは変えていない）:
+//   - HTML の id はすべて watch_ / watch- プレフィックスに改名（16件の衝突を回避）。
+//     関数名の衝突は showSection と startAiFlow の2件のみ:
+//       * showSection      … 新規定義せず、上の showSection() の sections 配列に
+//                             watch_sectionInput / watch_sectionWizard /
+//                             watch_sectionPrint を追加する形で統合。
+//       * startAiFlow      … runWatchAiFlow（共通ロジック）+ startWatchAiFlow
+//                             （セクション内ボタン用）+ startWatchAiFlowHome
+//                             （ホームの緑ボタン用）に分割。TSCA機能の
+//                             runTscaAiFromPageFlow / startTscaAiFlow と同じ構成。
+//     他の関数名・変数名は移植元のまま（衝突なしを確認済み）。
+//   - Watch専用の設定画面（会社情報・APIキー入力）は移植していない。
+//     APIキーは既存の state.openaiKey（_hsOpenAiKey）を、会社情報は既存の
+//     state.company（_hsCompany）を watchGetCompanyConfig() 経由でそのまま流用する
+//     （時計用に入れ直す必要はない）。これに伴い、元は
+//     chrome.storage.local.get(['companyName','nameAndTitle','email'], ...) という
+//     非同期コールバックで会社情報を取得していた箇所（handleCreate /
+//     handleDirectCreate / handleDirectToPreview）を、既にロード済みの
+//     state.company を同期的に読む形に書き換えている（値の出所が変わるだけで、
+//     worksheet.js に渡す config オブジェクトの形は完全に同一）。
+//   - 印刷は window.open ではなく chrome.tabs.create を使用（HSコード側の
+//     openPrintWindowBtn ハンドラと同じ方式に統一）。保存先ストレージキーも
+//     _printPayload ではなく _watchPrintPayload、開くページも print.html では
+//     なく print-watch.html（既存 print.html / print.js は完全に無改変）。
+//   - worksheet.js（createWatchWorksheetData / parseChatGPTData / normalizeData /
+//     calculateValueBreakout 等のロジック）は1バイトも変更せずそのまま追加。
+// =========================================================
+
+/** worksheet.js の createWatchWorksheetData / buildDirectData が返したデータ（正規化済み） */
+let gData = null;
+
+/** ウィザードで確認・編集されたセルの値（行番号→値の文字列マップ） */
+let gCells = {};
+
+/** 全7ブロックを通過したか */
+let gAllBlocksDone = false;
+
+/** state.company（_hsCompany、既に loadSettings() でロード済み）を
+ *  worksheet.js の config 引数の形（companyName/nameAndTitle/email）に変換する。 */
+function watchGetCompanyConfig() {
+  var c = state.company || {};
+  return {
+    companyName: c.name || '',
+    nameAndTitle: c.nameTitle || '',
+    email: c.email || ''
+  };
+}
+
+// ---------------------------------------------------------
+// 入力セクション — タブ切り替え
+// ---------------------------------------------------------
+
+function setupInputSection() {
+  document.getElementById('watch_tabPaste').addEventListener('click', function () {
+    switchInputMode('paste');
+  });
+  document.getElementById('watch_tabDirect').addEventListener('click', function () {
+    switchInputMode('direct');
+  });
+
+  var form = document.getElementById('watch_worksheetForm');
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    handleCreate();
+  });
+
+  // Ctrl/Cmd + Enter で送信（貼り付けモード時のみ）
+  document.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      var inputSection = document.getElementById('watch_sectionInput');
+      if (inputSection && inputSection.style.display !== 'none') {
+        var modePaste = document.getElementById('watch_modePaste');
+        if (modePaste && modePaste.style.display !== 'none') {
+          form.dispatchEvent(new Event('submit'));
+        }
+      }
+    }
+  });
+
+  // 設定リンク（Watch専用の設定画面は持たず、既存の会社情報設定画面を共用する）
+  document.getElementById('watch_openSettingsLink').addEventListener('click', function () {
+    showSection('sectionSettings');
+  });
+
+  // 直接入力フォームのセットアップ
+  setupDirectForm();
+
+  // AI読み取りボタン（セクション内）
+  document.getElementById('watch_aiAnalyzeBtn').addEventListener('click', startWatchAiFlow);
+}
+
+function switchInputMode(mode) {
+  var tabPaste  = document.getElementById('watch_tabPaste');
+  var tabDirect = document.getElementById('watch_tabDirect');
+  var modePaste = document.getElementById('watch_modePaste');
+  var modeDirect = document.getElementById('watch_modeDirect');
+
+  if (mode === 'paste') {
+    tabPaste.classList.add('watch-tab-active');
+    tabDirect.classList.remove('watch-tab-active');
+    tabPaste.setAttribute('aria-selected', 'true');
+    tabDirect.setAttribute('aria-selected', 'false');
+    modePaste.style.display = '';
+    modeDirect.style.display = 'none';
+  } else {
+    tabPaste.classList.remove('watch-tab-active');
+    tabDirect.classList.add('watch-tab-active');
+    tabPaste.setAttribute('aria-selected', 'false');
+    tabDirect.setAttribute('aria-selected', 'true');
+    modePaste.style.display = 'none';
+    modeDirect.style.display = '';
+  }
+}
+
+// ---------------------------------------------------------
+// 入力セクション — ChatGPT貼り付けモード
+// ---------------------------------------------------------
+
+function handleCreate() {
+  var chatgptData = document.getElementById('watch_chatgptData').value.trim();
+
+  if (!chatgptData) {
+    showInputMessage('ChatGPTデータを入力してください。', 'error');
+    return;
+  }
+  if (
+    !chatgptData.includes('=== WATCH WORKSHEET DATA ===') ||
+    !chatgptData.includes('=== END DATA ===')
+  ) {
+    showInputMessage(
+      'ChatGPTデータの形式が正しくありません。\n「=== WATCH WORKSHEET DATA ===」から「=== END DATA ===」までの部分が必要です。',
+      'error'
+    );
+    return;
+  }
+
+  setInputLoading(true);
+  hideInputMessage();
+
+  var config = watchGetCompanyConfig();
+  var result = createWatchWorksheetData('', chatgptData, config);
+
+  setInputLoading(false);
+
+  if (!result.success) {
+    showInputMessage(result.message, 'error');
+    return;
+  }
+
+  gData = result.data;
+  gAllBlocksDone = false;
+  gCells = {};
+
+  initWizard(gData);
+  showSection('watch_sectionWizard');
+}
+
+function setInputLoading(show) {
+  var loading = document.getElementById('watch_inputLoading');
+  var btn = document.getElementById('watch_createBtn');
+  loading.style.display = show ? 'block' : 'none';
+  btn.disabled = show;
+}
+
+function showInputMessage(text, type) {
+  var el = document.getElementById('watch_inputMessage');
+  el.textContent = text;
+  el.className = 'message ' + type;
+  el.style.display = 'block';
+  if (type === 'error') {
+    setTimeout(function () {
+      el.style.display = 'none';
+    }, 12000);
+  }
+}
+
+function hideInputMessage() {
+  var el = document.getElementById('watch_inputMessage');
+  el.style.display = 'none';
+}
+
+// ---------------------------------------------------------
+// 直接入力フォーム
+// ---------------------------------------------------------
+
+function setupDirectForm() {
+  // ムーブメント変更時: Jewels表示制御、バッテリー国自動設定
+  document.getElementById('watch_di_movementType').addEventListener('change', function () {
+    onDirectMovementChange();
+    updateHtsHint();
+  });
+
+  // ケース素材変更時: HTSUS候補再計算
+  document.getElementById('watch_di_caseMaterial').addEventListener('change', function () {
+    updateHtsHint();
+  });
+
+  // 製造国一括セット
+  document.getElementById('watch_di_countryMain').addEventListener('change', function () {
+    applyMainCountry();
+  });
+
+  // HTSUSコードのリアルタイム形式チェック
+  document.getElementById('watch_di_htsCode').addEventListener('input', function () {
+    validateHtsFormat(this.value);
+  });
+
+  // タイトル自動生成ボタン
+  document.getElementById('watch_di_genTitleBtn').addEventListener('click', function () {
+    generateDirectTitle();
+  });
+
+  // フォームサブミット
+  document.getElementById('watch_directForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    handleDirectCreate();
+  });
+
+  // AI読み取り後の「印刷プレビューへ直接進む」ボタン
+  var printDirectBtn = document.getElementById('watch_di_printDirectBtn');
+  if (printDirectBtn) {
+    printDirectBtn.addEventListener('click', function () {
+      handleDirectToPreview();
+    });
+  }
+
+  // 初期化
+  onDirectMovementChange();
+  updateHtsHint();
+}
+
+/** ムーブメント変更時の副作用 */
+function onDirectMovementChange() {
+  var mt = document.getElementById('watch_di_movementType').value;
+  var isQuartz = (mt === 'Quartz');
+  var jewelsGroup = document.getElementById('watch_di_jewelsGroup');
+  var jewelsNote = document.getElementById('watch_di_jewelsNote');
+  var batterySel = document.getElementById('watch_di_batteryCountry');
+
+  // Jewelsフィールドの表示制御
+  if (jewelsGroup) {
+    jewelsGroup.style.opacity = isQuartz ? '0.5' : '1';
+  }
+  if (jewelsNote) {
+    jewelsNote.style.display = isQuartz ? 'block' : 'none';
+  }
+
+  // バッテリー原産国の自動設定
+  if (batterySel) {
+    batterySel.value = isQuartz ? 'Japan' : 'N/A';
+  }
+}
+
+/** 製造国一括セット */
+function applyMainCountry() {
+  var country = document.getElementById('watch_di_countryMain').value;
+  if (!country) return;
+
+  var partSelIds = ['watch_di_movementCountry', 'watch_di_caseCountry', 'watch_di_bandCountry'];
+  partSelIds.forEach(function (id) {
+    var sel = document.getElementById(id);
+    if (sel) sel.value = country;
+  });
+
+  // バッテリーはムーブメント種別に依存
+  var mt = document.getElementById('watch_di_movementType').value;
+  var batterySel = document.getElementById('watch_di_batteryCountry');
+  if (batterySel) {
+    batterySel.value = (mt === 'Quartz') ? 'Japan' : 'N/A';
+  }
+}
+
+// ---------------------------------------------------------
+// HTSUS候補ロジック（G項）
+// ---------------------------------------------------------
+
+/**
+ * ムーブメント種別 × ケース素材（貴金属か否か）から候補を提示。
+ * ルール5の代表コード3つのみ。網羅的分類はしない。
+ */
+function getHtsCandidates(movementType, caseMaterial) {
+  var isQuartz     = (movementType === 'Quartz');
+  var isPrecious   = (caseMaterial === 'Wholly of Precious Metal');
+  var isMechanical = (movementType === 'Automatic' || movementType === 'Manual');
+
+  var candidates = [];
+
+  if (isQuartz && !isPrecious) {
+    candidates.push({ code: '9102.21.5040', desc: '腕時計 / クオーツ / 非貴金属ケース' });
+  } else if (isMechanical && !isPrecious) {
+    candidates.push({ code: '9102.21.7010', desc: '腕時計 / 機械式 / 非貴金属ケース' });
+  } else if (isMechanical && isPrecious) {
+    candidates.push({ code: '9102.11.9500', desc: '腕時計 / 機械式 / 貴金属ケース' });
+  }
+
+  return candidates;
+}
+
+function updateHtsHint() {
+  var mt  = document.getElementById('watch_di_movementType').value;
+  var cm  = document.getElementById('watch_di_caseMaterial').value;
+  var hint = document.getElementById('watch_di_htsHint');
+  if (!hint) return;
+
+  var candidates = getHtsCandidates(mt, cm);
+
+  if (candidates.length === 0) {
+    hint.textContent = '候補なし: 正しいコードを手入力してください。';
+    hint.className = 'watch-hts-hint watch-hts-hint-warn';
+    return;
+  }
+
+  hint.className = 'watch-hts-hint watch-hts-hint-info';
+  hint.innerHTML = '';
+
+  var label = document.createElement('strong');
+  label.textContent = '候補コード（参考のみ）: ';
+  hint.appendChild(label);
+
+  candidates.forEach(function (c, i) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'watch-hts-candidate-btn';
+    btn.textContent = c.code + ' — ' + c.desc;
+    btn.addEventListener('click', function () {
+      document.getElementById('watch_di_htsCode').value = c.code;
+      validateHtsFormat(c.code);
+    });
+    hint.appendChild(btn);
+    if (i < candidates.length - 1) {
+      hint.appendChild(document.createElement('br'));
+    }
+  });
+}
+
+/**
+ * 10桁形式チェック: ####.##.#### の形式か確認。
+ */
+function validateHtsFormat(val) {
+  var errEl = document.getElementById('watch_di_htsError');
+  if (!errEl) return;
+  var trimmed = val.trim();
+  if (!trimmed) {
+    errEl.style.display = 'none';
+    return;
+  }
+  // 形式: 4桁.2桁.4桁 = 10桁数字 + 2ドット
+  var ok = /^\d{4}\.\d{2}\.\d{4}$/.test(trimmed);
+  if (!ok) {
+    errEl.textContent = '形式が正しくありません。例: 9102.21.5040 (10桁・ドット区切り)';
+    errEl.style.display = 'block';
+  } else {
+    errEl.style.display = 'none';
+  }
+}
+
+// ---------------------------------------------------------
+// タイトル自動生成（D項 — ルール11準拠）
+// ---------------------------------------------------------
+
+function generateDirectTitle() {
+  var brand    = document.getElementById('watch_di_brand').value.trim();
+  var ref      = document.getElementById('watch_di_reference').value.trim();
+  var mt       = document.getElementById('watch_di_movementType').value;
+  var caseDet  = document.getElementById('watch_di_caseDetail').value.trim();
+  var bandMat  = document.getElementById('watch_di_bandMaterial').value;
+  var jewels   = parseInt(document.getElementById('watch_di_jewelCount').value || '0', 10);
+
+  if (!brand && !ref) {
+    showDirectMessage('タイトル生成にはブランドか型番が必要です。', 'error');
+    return;
+  }
+
+  if (!caseDet) {
+    showDirectMessage('ケース素材（詳細）が未入力です。入力するとタイトルに反映されます。', 'warn');
+  }
+
+  var parts = [];
+
+  if (brand) parts.push(brand);
+  if (ref)   parts.push(ref);
+
+  // Movement
+  parts.push(mt);
+
+  // Jewels: 機械式のみ (数値+J)
+  if (mt !== 'Quartz' && jewels > 0) {
+    parts.push(jewels + 'J');
+  }
+
+  // Case Material (詳細優先)
+  if (caseDet) parts.push(caseDet);
+
+  // Band Material
+  if (bandMat && bandMat !== 'No Band') {
+    parts.push(bandMat + ' Band');
+  }
+
+  parts.push('Watch');
+
+  var title = parts.join(' ');
+
+  var styleRefEl = document.getElementById('watch_di_styleRef');
+  styleRefEl.value = title;
+
+  var previewEl = document.getElementById('watch_di_titlePreview');
+  if (previewEl) {
+    previewEl.textContent = '生成済み: ' + title;
+    previewEl.style.display = 'block';
+  }
+}
+
+// ---------------------------------------------------------
+// 直接入力 → normalizeData 形式へ変換
+// ---------------------------------------------------------
+
+/**
+ * 直接入力フォームの値を、normalizeData の出力オブジェクトと同じ形式に組み立てる。
+ * worksheet.js の calculateValueBreakout / mapJewelsToDropdown を再利用する。
+ */
+function buildDirectData(config) {
+  var mt       = document.getElementById('watch_di_movementType').value;
+  var isQuartz = (mt === 'Quartz');
+
+  var priceRaw = parseFloat(document.getElementById('watch_di_price').value || '0');
+  var currency = document.getElementById('watch_di_currency').value || 'USD';
+  var jewCount = parseInt(document.getElementById('watch_di_jewelCount').value || '0', 10);
+
+  var styleRef = document.getElementById('watch_di_styleRef').value.trim();
+  var htsRaw   = document.getElementById('watch_di_htsCode').value.trim();
+
+  // Value Breakout
+  var breakout = calculateValueBreakout(priceRaw, mt);
+
+  var data = {
+    styleRef:         styleRef,
+    totalValue:       priceRaw,
+    currency:         currency,
+    movementType:     mt,
+    displayType:      document.getElementById('watch_di_displayType').value,
+    htsCode:          htsRaw.replace(/\./g, ''),   // ドットなし数字列で保持（buildFinalCellsと整合）
+    jewels:           isQuartz ? '0 to 1 Jewels' : mapJewelsToDropdown(jewCount),
+    jewelCount:       isQuartz ? 0 : jewCount,
+    quantity:         parseInt(document.getElementById('watch_di_quantity').value || '1', 10),
+
+    bandMaterial:     document.getElementById('watch_di_bandMaterial').value,
+    bandDetail:       document.getElementById('watch_di_bandDetail').value.trim(),
+    caseMaterial:     document.getElementById('watch_di_caseMaterial').value,
+    caseDetail:       document.getElementById('watch_di_caseDetail').value.trim(),
+    backplateMaterial: document.getElementById('watch_di_backplateMaterial').value,
+    backplateDetail:  document.getElementById('watch_di_backplateDetail').value.trim(),
+
+    movementCountry:  document.getElementById('watch_di_movementCountry').value,
+    caseCountry:      document.getElementById('watch_di_caseCountry').value,
+    bandCountry:      document.getElementById('watch_di_bandCountry').value,
+    batteryCountry:   document.getElementById('watch_di_batteryCountry').value,
+    // backplateCountry はワークシートに項目がないため収集しない
+
+    primaryFunction:  document.getElementById('watch_di_primaryFunction').value,
+    otherMaterials:   '',
+
+    movementValue:    breakout.movement,
+    caseValue:        breakout.case,
+    strapValue:       breakout.strap,
+    batteryValue:     breakout.battery,
+
+    companyName:      (config || {}).companyName || '',
+    nameAndTitle:     (config || {}).nameAndTitle || '',
+    email:            (config || {}).email || '',
+    awbNumber:        ''
+  };
+
+  // over12mm はウィザードB4（f_over12mm）に直接セットする
+  data._over12mm = document.getElementById('watch_di_over12mm').value;
+
+  return data;
+}
+
+/**
+ * 直接入力フォームの送信処理。
+ * バリデーション → buildDirectData → initWizard の順で流す。
+ */
+function handleDirectCreate() {
+  // バリデーション
+  var brand   = document.getElementById('watch_di_brand').value.trim();
+  var ref     = document.getElementById('watch_di_reference').value.trim();
+  var price   = document.getElementById('watch_di_price').value.trim();
+  var styleRef = document.getElementById('watch_di_styleRef').value.trim();
+
+  if (!brand && !ref) {
+    showDirectMessage('ブランドまたは型番を入力してください。', 'error');
+    return;
+  }
+  if (!price || parseFloat(price) <= 0) {
+    showDirectMessage('販売価格を正しく入力してください。', 'error');
+    return;
+  }
+  if (!styleRef) {
+    showDirectMessage('Style name/No/Reference が空です。「タイトルを生成」ボタンを押すか手入力してください。', 'error');
+    return;
+  }
+
+  // HTSUS形式チェック（入力されている場合のみ）
+  var htsVal = document.getElementById('watch_di_htsCode').value.trim();
+  if (htsVal && !/^\d{4}\.\d{2}\.\d{4}$/.test(htsVal)) {
+    showDirectMessage('HTSUSコードの形式が正しくありません。例: 9102.21.5040', 'error');
+    return;
+  }
+
+  var config = watchGetCompanyConfig();
+  var data = buildDirectData(config);
+
+  gData = data;
+  gAllBlocksDone = false;
+  gCells = {};
+
+  initWizard(gData);
+  showSection('watch_sectionWizard');
+}
+
+/**
+ * AI読み取り後の「印刷プレビューへ直接進む」処理。
+ * バリデーション → confirm → buildDirectData → buildPreviewAndShow
+ */
+function handleDirectToPreview() {
+  var brand    = document.getElementById('watch_di_brand').value.trim();
+  var ref      = document.getElementById('watch_di_reference').value.trim();
+  var price    = document.getElementById('watch_di_price').value.trim();
+  var styleRef = document.getElementById('watch_di_styleRef').value.trim();
+  var htsVal   = document.getElementById('watch_di_htsCode').value.trim();
+
+  if (!brand && !ref) {
+    showDirectMessage('ブランドまたは型番を入力してください。', 'error');
+    return;
+  }
+  if (!price || parseFloat(price) <= 0) {
+    showDirectMessage('申告価格を入力してください（出品価格と異なる場合は正しい申告価格を入力してください）。', 'error');
+    return;
+  }
+  if (!styleRef) {
+    showDirectMessage('Style name/No/Reference が空です。「タイトルを生成」ボタンを押すか手入力してください。', 'error');
+    return;
+  }
+  if (!htsVal) {
+    showDirectMessage('HTSUSコードを入力してください。', 'error');
+    return;
+  }
+  if (!/^\d{4}\.\d{2}\.\d{4}$/.test(htsVal)) {
+    showDirectMessage('HTSUSコードの形式が正しくありません。例: 9102.21.5040', 'error');
+    return;
+  }
+
+  var currency = document.getElementById('watch_di_currency').value || 'USD';
+  var confirmed = window.confirm(
+    '印刷プレビューに進む前に、以下をすべて確認しましたか？\n\n' +
+    '✅ ブランド・型番\n' +
+    '✅ ムーブメント種別・素材\n' +
+    '✅ 原産国\n' +
+    '✅ HTSUSコード\n' +
+    '✅ 申告価格: ' + price + ' ' + currency + '\n\n' +
+    '⚠️ 特に価格は出品価格と申告価格が異なる場合があります。\n' +
+    '   正しい申告価格が入力されているか必ず確認してください。\n\n' +
+    '問題なければ「OK」を押してください。'
+  );
+  if (!confirmed) return;
+
+  var config = watchGetCompanyConfig();
+  var data = buildDirectData(config);
+  gData = data;
+  gCells = {};
+  gAllBlocksDone = true;
+  buildPreviewAndShow();
+}
+
+function showDirectMessage(text, type) {
+  var el = document.getElementById('watch_directInputMessage');
+  el.textContent = text;
+  el.className = 'message ' + type;
+  el.style.display = 'block';
+  if (type === 'error' || type === 'warn') {
+    setTimeout(function () {
+      el.style.display = 'none';
+    }, 10000);
+  }
+}
+
+// ---------------------------------------------------------
+// 確認ウィザード
+// ---------------------------------------------------------
+
+/**
+ * ウィザード用フィールド定義。
+ * blockId: 1〜7
+ * fieldId: HTMLのinput id（watch_ プレフィックス）
+ * rowNum: スプレッドシート行番号（参考情報・gCells のキー。DOM idではない）
+ * getInitial(data): gDataから初期値を取り出す関数
+ */
+var WIZARD_FIELDS = [
+  // Block 1
+  { blockId: 1, fieldId: 'watch_f_styleRef',       rowNum: 3,  getInitial: function(d){ return d.styleRef || ''; } },
+  { blockId: 1, fieldId: 'watch_f_styleOfWatch',   rowNum: 4,  getInitial: function()  { return 'Wrist'; } },
+  { blockId: 1, fieldId: 'watch_f_styleOther',     rowNum: 5,  getInitial: function()  { return ''; } },
+  { blockId: 1, fieldId: 'watch_f_quantity',       rowNum: 6,  getInitial: function(d){ return String(d.quantity || 1); } },
+  // Block 2
+  { blockId: 2, fieldId: 'watch_f_hts1',           rowNum: 7,  getInitial: function(d){ return (d.htsCode || '').replace(/\./g, ''); } },
+  { blockId: 2, fieldId: 'watch_f_hts2',           rowNum: 8,  getInitial: function()  { return ''; } },
+  { blockId: 2, fieldId: 'watch_f_hts3',           rowNum: 9,  getInitial: function()  { return ''; } },
+  { blockId: 2, fieldId: 'watch_f_hts4',           rowNum: 10, getInitial: function()  { return ''; } },
+  // Block 3
+  { blockId: 3, fieldId: 'watch_f_primaryFunc',    rowNum: 11, getInitial: function(d){
+      var known = ['Timekeeping','GPS','Heart Monitor','Wi-Fi','Pedometer'];
+      return (d.primaryFunction && known.indexOf(d.primaryFunction) === -1) ? 'Other' : (d.primaryFunction || 'Timekeeping');
+    }
+  },
+  { blockId: 3, fieldId: 'watch_f_primaryFuncOther', rowNum: 12, getInitial: function(d){
+      var known = ['Timekeeping','GPS','Heart Monitor','Wi-Fi','Pedometer'];
+      return (d.primaryFunction && known.indexOf(d.primaryFunction) === -1) ? d.primaryFunction : '';
+    }
+  },
+  { blockId: 3, fieldId: 'watch_f_powered',        rowNum: 13, getInitial: function(d){
+      var mt = String(d.movementType || '').toLowerCase();
+      if (mt.indexOf('quartz') !== -1) return 'Electric (Battery)';
+      if (mt.indexOf('automatic') !== -1) return 'Automatic Winding (Self Winding)';
+      return 'Manual';
+    }
+  },
+  { blockId: 3, fieldId: 'watch_f_batteryOrigin',  rowNum: 14, getInitial: function(d){
+      var mt = String(d.movementType || '').toLowerCase();
+      return mt.indexOf('quartz') !== -1 ? (d.batteryCountry || 'Japan') : 'N/A';
+    }
+  },
+  // Block 4
+  { blockId: 4, fieldId: 'watch_f_movementDisplay', rowNum: 15, getInitial: function(d){
+      return (d.movementType || '') + ', ' + (d.displayType || 'Analog');
+    }
+  },
+  { blockId: 4, fieldId: 'watch_f_over12mm',       rowNum: 16, getInitial: function(d){
+      // 直接入力モードの場合は _over12mm が入っている
+      return d._over12mm || 'No';
+    }
+  },
+  { blockId: 4, fieldId: 'watch_f_jewels',         rowNum: 17, getInitial: function(d){ return String(d.jewelCount || 0); } },
+  { blockId: 4, fieldId: 'watch_f_movementOrigin', rowNum: 18, getInitial: function(d){ return d.movementCountry || ''; } },
+  // Block 5
+  { blockId: 5, fieldId: 'watch_f_bandMaterial',   rowNum: 19, getInitial: function(d){
+      var known = ['Textile','Metal','Leather','No Band'];
+      return (d.bandMaterial && known.indexOf(d.bandMaterial) === -1) ? 'Other' : (d.bandMaterial || '');
+    }
+  },
+  { blockId: 5, fieldId: 'watch_f_bandLeather',    rowNum: 20, getInitial: function(d){
+      return (d.bandMaterial === 'Leather' && d.bandDetail) ? d.bandDetail : '';
+    }
+  },
+  { blockId: 5, fieldId: 'watch_f_bandMetal',      rowNum: 21, getInitial: function(d){
+      return (d.bandMaterial === 'Metal' && d.bandDetail) ? d.bandDetail : '';
+    }
+  },
+  { blockId: 5, fieldId: 'watch_f_bandOther',      rowNum: 22, getInitial: function(d){
+      var known = ['Textile','Metal','Leather','No Band'];
+      return (d.bandMaterial && known.indexOf(d.bandMaterial) === -1) ? d.bandMaterial : '';
+    }
+  },
+  { blockId: 5, fieldId: 'watch_f_bandOrigin',     rowNum: 23, getInitial: function(d){ return d.bandCountry || ''; } },
+  { blockId: 5, fieldId: 'watch_f_caseMaterial',   rowNum: 24, getInitial: function(d){
+      if (d.caseDetail) {
+        var dl = String(d.caseDetail).toLowerCase();
+        if (dl.indexOf('plated') !== -1 || dl.indexOf('gold') !== -1 || dl.indexOf('silver') !== -1 || dl.indexOf('precious') !== -1) {
+          return d.caseDetail;
+        }
+        return d.caseDetail + ', ' + (d.caseMaterial || '');
+      }
+      return d.caseMaterial || '';
+    }
+  },
+  { blockId: 5, fieldId: 'watch_f_caseOther',      rowNum: 25, getInitial: function()  { return ''; } },
+  { blockId: 5, fieldId: 'watch_f_caseOrigin',     rowNum: 26, getInitial: function(d){ return d.caseCountry || ''; } },
+  { blockId: 5, fieldId: 'watch_f_backplateMaterial', rowNum: 27, getInitial: function(d){
+      return d.backplateDetail ? d.backplateDetail : (d.backplateMaterial || '');
+    }
+  },
+  { blockId: 5, fieldId: 'watch_f_backplateOther', rowNum: 28, getInitial: function()  {
+      // 直接入力モードでは使用しない（裏蓋原産国はワークシートに項目なし）
+      return '';
+    }
+  },
+  // Block 6
+  { blockId: 6, fieldId: 'watch_f_movementValue',  rowNum: 30, getInitial: function(d){
+      var cur = d.currency || 'USD';
+      return d.movementValue ? d.movementValue.toFixed(2) + ' ' + cur : '';
+    }
+  },
+  { blockId: 6, fieldId: 'watch_f_caseValue',      rowNum: 31, getInitial: function(d){
+      var cur = d.currency || 'USD';
+      return d.caseValue ? d.caseValue.toFixed(2) + ' ' + cur : '';
+    }
+  },
+  { blockId: 6, fieldId: 'watch_f_strapValue',     rowNum: 32, getInitial: function(d){
+      var cur = d.currency || 'USD';
+      return d.strapValue ? d.strapValue.toFixed(2) + ' ' + cur : '';
+    }
+  },
+  { blockId: 6, fieldId: 'watch_f_batteryValue',   rowNum: 33, getInitial: function(d){
+      var cur = d.currency || 'USD';
+      return d.batteryValue ? d.batteryValue.toFixed(2) + ' ' + cur : '';
+    }
+  },
+  { blockId: 6, fieldId: 'watch_f_totalValue',     rowNum: 34, getInitial: function(d){
+      var cur = d.currency || 'USD';
+      return d.totalValue ? d.totalValue.toFixed(2) + ' ' + cur : '';
+    }
+  },
+  // Block 7
+  { blockId: 7, fieldId: 'watch_f_awb',            rowNum: 39, getInitial: function()  { return ''; } },
+  { blockId: 7, fieldId: 'watch_f_wiz_companyName', rowNum: 36, getInitial: function(d){ return d.companyName || ''; } },
+  { blockId: 7, fieldId: 'watch_f_wiz_nameAndTitle', rowNum: 37, getInitial: function(d){ return d.nameAndTitle || ''; } },
+  { blockId: 7, fieldId: 'watch_f_wiz_email',      rowNum: 38, getInitial: function(d){ return d.email || ''; } }
+];
+
+var TOTAL_BLOCKS = 7;
+/** 各ブロックが通過済みかどうかのフラグ */
+var blockDone = {};
+
+function initWizard(data) {
+  // 全ブロックのフィールドに初期値を設定
+  WIZARD_FIELDS.forEach(function (f) {
+    var el = document.getElementById(f.fieldId);
+    if (el) el.value = f.getInitial(data);
+  });
+
+  // 全ブロックのdone状態をリセット
+  for (var i = 1; i <= TOTAL_BLOCKS; i++) blockDone[i] = false;
+  gAllBlocksDone = false;
+  gCells = {};
+
+  // Block1を表示、他を隠す
+  showBlock(1);
+  updateProgress();
+}
+
+function setupWizardSection() {
+  document.getElementById('watch_backToInputFromWizard').addEventListener('click', function () {
+    gData = null;
+    showSection('watch_sectionInput');
+  });
+
+  // 各ブロックの「次へ」「戻る」ボタン
+  document.querySelectorAll('.watch-wiz-next').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var blockId = parseInt(this.getAttribute('data-block'), 10);
+      collectBlock(blockId);
+      blockDone[blockId] = true;
+      updateProgress();
+      showBlock(blockId + 1);
+    });
+  });
+
+  document.querySelectorAll('.watch-wiz-prev').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var blockId = parseInt(this.getAttribute('data-block'), 10);
+      collectBlock(blockId);
+      showBlock(blockId - 1);
+    });
+  });
+
+  // 「確認完了」ボタン
+  document.getElementById('watch_confirmDoneBtn').addEventListener('click', function () {
+    collectBlock(7);
+    blockDone[7] = true;
+    gAllBlocksDone = true;
+    updateProgress();
+    buildPreviewAndShow();
+  });
+}
+
+function showBlock(blockId) {
+  for (var i = 1; i <= TOTAL_BLOCKS; i++) {
+    var el = document.getElementById('watch_block' + i);
+    if (el) el.style.display = (i === blockId) ? '' : 'none';
+  }
+}
+
+function updateProgress() {
+  var doneCount = Object.keys(blockDone).filter(function (k) { return blockDone[k]; }).length;
+  var el = document.getElementById('watch_wizardProgress');
+  if (el) {
+    el.textContent = doneCount + ' / ' + TOTAL_BLOCKS + ' 確認済み';
+  }
+}
+
+/**
+ * 指定ブロックのフィールド値を gCells に収集する。
+ */
+function collectBlock(blockId) {
+  WIZARD_FIELDS.filter(function (f) { return f.blockId === blockId; }).forEach(function (f) {
+    var el = document.getElementById(f.fieldId);
+    if (el) gCells[f.rowNum] = el.value;
+  });
+}
+
+// ---------------------------------------------------------
+// 印刷セクション
+// ---------------------------------------------------------
+
+function setupPrintSection() {
+  document.getElementById('watch_backToWizardBtn').addEventListener('click', function () {
+    showSection('watch_sectionWizard');
+    showBlock(7);
+  });
+
+  document.getElementById('watch_backToInputFinalBtn').addEventListener('click', function () {
+    gData = null;
+    gCells = {};
+    gAllBlocksDone = false;
+    showSection('watch_sectionInput');
+  });
+
+  document.getElementById('watch_openPrintWindowBtn').addEventListener('click', function () {
+    openPrintWindow();
+  });
+}
+
+/**
+ * ウィザードの gCells を反映した最終39行分のセル値マップを組み立てる。
+ */
+function buildFinalCells() {
+  var col = {};
+  var data = gData;
+
+  col[3]  = data.styleRef || '';
+  col[4]  = 'Wrist';
+  col[5]  = '';
+  col[6]  = String(data.quantity || 1);
+
+  var htsNumeric = (data.htsCode || '').replace(/\./g, '');
+  col[7]  = htsNumeric;
+  col[8]  = '';
+  col[9]  = '';
+  col[10] = '';
+
+  var known = ['Timekeeping','GPS','Heart Monitor','Wi-Fi','Pedometer'];
+  if (data.primaryFunction && known.indexOf(data.primaryFunction) === -1) {
+    col[11] = 'Other';
+    col[12] = data.primaryFunction;
+  } else {
+    col[11] = data.primaryFunction || 'Timekeeping';
+    col[12] = '';
+  }
+
+  var mt = String(data.movementType || '').toLowerCase();
+  if (mt.indexOf('quartz') !== -1)         col[13] = 'Electric (Battery)';
+  else if (mt.indexOf('automatic') !== -1) col[13] = 'Automatic Winding (Self Winding)';
+  else                                     col[13] = 'Manual';
+
+  col[14] = mt.indexOf('quartz') !== -1 ? (data.batteryCountry || 'Japan') : 'N/A';
+
+  col[15] = (data.movementType || '') + ', ' + (data.displayType || 'Analog');
+  col[16] = data._over12mm || 'No';
+  col[17] = String(data.jewelCount || 0);
+  col[18] = data.movementCountry || '';
+
+  var knownBands = ['Textile','Metal','Leather','No Band'];
+  if (data.bandMaterial && knownBands.indexOf(data.bandMaterial) === -1) {
+    col[19] = 'Other';
+    col[20] = '';
+    col[21] = '';
+    col[22] = data.bandMaterial;
+  } else {
+    col[19] = data.bandMaterial || '';
+    col[20] = (data.bandMaterial === 'Leather' && data.bandDetail) ? data.bandDetail : '';
+    col[21] = (data.bandMaterial === 'Metal' && data.bandDetail) ? data.bandDetail : '';
+    col[22] = '';
+  }
+  col[23] = data.bandCountry || '';
+
+  if (data.caseDetail) {
+    var dl = String(data.caseDetail).toLowerCase();
+    if (dl.indexOf('plated') !== -1 || dl.indexOf('gold') !== -1 || dl.indexOf('silver') !== -1 || dl.indexOf('precious') !== -1) {
+      col[24] = data.caseDetail;
+    } else {
+      col[24] = data.caseDetail + ', ' + (data.caseMaterial || '');
+    }
+  } else {
+    col[24] = data.caseMaterial || '';
+  }
+  col[25] = '';
+  col[26] = data.caseCountry || '';
+  col[27] = data.backplateDetail ? data.backplateDetail : (data.backplateMaterial || '');
+  col[28] = '';
+
+  var currency = data.currency || 'USD';
+  col[29] = '';
+  col[30] = data.movementValue ? data.movementValue.toFixed(2) + ' ' + currency : '';
+  col[31] = data.caseValue     ? data.caseValue.toFixed(2)     + ' ' + currency : '';
+  col[32] = data.strapValue    ? data.strapValue.toFixed(2)    + ' ' + currency : '';
+  col[33] = data.batteryValue  ? data.batteryValue.toFixed(2)  + ' ' + currency : '';
+  col[34] = data.totalValue    ? data.totalValue.toFixed(2)    + ' ' + currency : '';
+
+  col[35] = '';
+  col[36] = data.companyName  || '';
+  col[37] = data.nameAndTitle || '';
+  col[38] = data.email        || '';
+  col[39] = '';
+
+  // gCells の値で上書き（ウィザードで編集した値が最終出力に反映）
+  Object.keys(gCells).forEach(function (rowNum) {
+    col[parseInt(rowNum, 10)] = gCells[rowNum];
+  });
+
+  return col;
+}
+
+/**
+ * ラベル定義（Watch Worksheet専用の39行レイアウト）
+ */
+var ROW_LABELS = [
+  'Style name/No/Reference',
+  'Style of watch',
+  '  If Other, provide type',
+  'Quantity',
+  'HTSUS Number (if known)',
+  'HTSUS Number (if known)',
+  'HTSUS Number (if known)',
+  'HTSUS Number (if known)',
+  'What is the primary function of watch',
+  '  If Other, provide primary function',
+  'How is the watch powered',
+  'Country of Origin of the battery',
+  'Movement/ Display type',
+  "Is the movement's size over 12mm in thickness and 50mm in width, length, or diameter?",
+  'Number of Jewels in Movement',
+  'Country of Origin of Movement',
+  'Material of Band (Strap)',
+  '  If Leather, provide type of animal',
+  '  If Metal, provide type of metal',
+  '  If Other, provide material',
+  'Country of Origin of Band (Strap)',
+  'Material of Case',
+  '  If Other, provide material',
+  'Country of Origin of Case',
+  'Material of Backplate',
+  '  If Other, provide material',
+  'Value Breakout (amount and currency)',
+  '  Movement',
+  '  Case',
+  '  Strap',
+  '  Battery',
+  '  Total Watch Value',
+  '',
+  'Company Name',
+  'Name and Title',
+  'E-mail',
+  'AWB Number'
+];
+
+var VALUE_BREAKOUT_ROWS = new Set([29,30,31,32,33,34]);
+var COMPANY_ROWS        = new Set([36,37,38,39]);
+
+function renderTable(tableEl, col) {
+  tableEl.innerHTML = '';
+
+  var trTitle = document.createElement('tr');
+  var tdTitle = document.createElement('td');
+  tdTitle.colSpan = 2;
+  tdTitle.textContent = 'Watch Worksheet';
+  tdTitle.className = 'ws-title';
+  trTitle.appendChild(tdTitle);
+  tableEl.appendChild(trTitle);
+
+  var trHeader = document.createElement('tr');
+  var tdHLabel = document.createElement('td');
+  tdHLabel.textContent = '';
+  tdHLabel.className = 'ws-header';
+  var tdHValue = document.createElement('td');
+  tdHValue.textContent = 'Watch 1';
+  tdHValue.className = 'ws-header';
+  trHeader.appendChild(tdHLabel);
+  trHeader.appendChild(tdHValue);
+  tableEl.appendChild(trHeader);
+
+  ROW_LABELS.forEach(function (label, idx) {
+    var rowNum = idx + 3;
+    var isSub  = label.indexOf('  ') === 0;
+    var isVB   = VALUE_BREAKOUT_ROWS.has(rowNum);
+    var isCo   = COMPANY_ROWS.has(rowNum);
+
+    var tr = document.createElement('tr');
+    if (isVB) tr.classList.add('watch-value-breakout');
+    if (isCo) tr.classList.add('watch-company-row');
+
+    var tdLabel = document.createElement('td');
+    tdLabel.textContent = label;
+    tdLabel.className   = isSub ? 'ws-label-sub' : 'ws-label';
+
+    var tdValue = document.createElement('td');
+    tdValue.textContent = col[rowNum] || '';
+    tdValue.className   = 'ws-data';
+
+    tr.appendChild(tdLabel);
+    tr.appendChild(tdValue);
+    tableEl.appendChild(tr);
+  });
+}
+
+function buildPreviewAndShow() {
+  var col   = buildFinalCells();
+  var table = document.getElementById('watch_previewTable');
+  renderTable(table, col);
+  showSection('watch_sectionPrint');
+}
+
+// ---------------------------------------------------------
+// 印刷ウィンドウ
+// ---------------------------------------------------------
+// 元実装は window.open + _printPayload + print.html。
+// 本体（HSコード側）の openPrintWindowBtn ハンドラと方式を揃えるため、
+// chrome.tabs.create + _watchPrintPayload + print-watch.html に変更している
+// （挙動は「印刷用の別タブが開く」という点で同一）。
+
+function openPrintWindow() {
+  var col     = buildFinalCells();
+  var payload = JSON.stringify(col);
+
+  chrome.storage.local.set({ _watchPrintPayload: payload }, function () {
+    if (chrome.runtime.lastError) {
+      var note = document.querySelector('#watch_sectionPrint .print-note');
+      if (note) {
+        var errSpan = document.createElement('span');
+        errSpan.style.color = '#b71c1c';
+        errSpan.textContent = ' データ保存エラー: ' + chrome.runtime.lastError.message;
+        note.appendChild(errSpan);
+      }
+      return;
+    }
+    chrome.tabs.create({ url: chrome.runtime.getURL('print-watch.html') });
+  });
+}
+
+// ---------------------------------------------------------
+// AI入力補助（商品ページ読み取り）
+// ---------------------------------------------------------
+
+/**
+ * 開いている商品ページをAIで読み取り、時計の直接入力フォームへ自動入力する共通ロジック。
+ * btn/msg: 呼び出し元のボタンとメッセージ要素。
+ * openSection: true の場合、結果が出た時点で watch_sectionInput を開く
+ * （ホームの緑ボタンから呼ばれた場合）。false の場合は既に watch_sectionInput
+ * 内にいるので画面遷移しない（TSCA機能の runTscaAiFromPageFlow と同じ構成）。
+ */
+function runWatchAiFlow(btn, msg, openSection) {
+  if (!state.openaiKey) {
+    showMessage(msg, 'error', 'APIキーが未設定です。設定画面で OpenAI APIキーを入力してください。');
+    msg.style.display = '';
+    return;
+  }
+
+  btn.disabled = true;
+  showMessage(msg, 'info', '分析中…');
+  msg.style.display = '';
+
+  getWatchPageInfo(function (pageInfo, errReason) {
+    if (!pageInfo) {
+      btn.disabled = false;
+      msg.style.display = 'none';
+      if (openSection) showSection('watch_sectionInput');
+      var aiMsg1 = document.getElementById('watch_aiAnalyzeMsg');
+      showMessage(aiMsg1, 'error', (errReason || 'ページ情報を取得できませんでした') + '。商品ページを開いてから試してください。');
+      return;
+    }
+    callOpenAIWatch(pageInfo, function (err, aiData) {
+      btn.disabled = false;
+      msg.style.display = 'none';
+      if (openSection) showSection('watch_sectionInput');
+      if (err || !aiData) {
+        var aiMsg2 = document.getElementById('watch_aiAnalyzeMsg');
+        showMessage(aiMsg2, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '不明なエラー'));
+        return;
+      }
+      fillFromAi(aiData);
+    });
+  });
+}
+
+/** セクション内の「🤖 商品ページをAIで読み取る」ボタン用 */
+function startWatchAiFlow() {
+  var msg = document.getElementById('watch_aiAnalyzeMsg');
+  var btn = document.getElementById('watch_aiAnalyzeBtn');
+  runWatchAiFlow(btn, msg, false);
+}
+
+/** ホームの緑ボタン「⌚ AIでWatch Worksheetを作成する」用 */
+function startWatchAiFlowHome() {
+  var msg = document.getElementById('watchAiHomeMsg');
+  var btn = document.getElementById('watchAiHomeBtn');
+  runWatchAiFlow(btn, msg, true);
+}
+
+function getWatchPageInfo(cb) {
+  chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+    if (!tabs || !tabs[0]) { cb(null, 'タブが見つかりません'); return; }
+    var tab = tabs[0];
+    if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:')) {
+      cb(null, '拡張機能や設定ページでは使えません。商品ページを開いてください'); return;
+    }
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: function () {
+        var url = location.href;
+        var host = location.hostname;
+
+        function getText(selectors) {
+          for (var i = 0; i < selectors.length; i++) {
+            var el = document.querySelector(selectors[i]);
+            if (el && el.textContent.trim()) return el.textContent.trim().substring(0, 400);
+          }
+          return '';
+        }
+        function getMeta(names) {
+          for (var i = 0; i < names.length; i++) {
+            var el = document.querySelector('meta[property="' + names[i] + '"],meta[name="' + names[i] + '"]');
+            if (el && el.getAttribute('content')) return el.getAttribute('content');
+          }
+          return '';
+        }
+
+        // JSON-LD Product schema
+        var jsonldProduct = null;
+        var scripts = document.querySelectorAll('script[type="application/ld+json"]');
+        for (var si = 0; si < scripts.length; si++) {
+          try {
+            var d = JSON.parse(scripts[si].textContent);
+            var items = d['@graph'] ? d['@graph'] : (Array.isArray(d) ? d : [d]);
+            for (var ii = 0; ii < items.length; ii++) {
+              if (items[ii]['@type'] === 'Product') { jsonldProduct = items[ii]; break; }
+            }
+            if (jsonldProduct) break;
+          } catch (e) {}
+        }
+
+        var productName = '', brand = '', condition = '', description = '', price = '', currency = '';
+
+        if (host.includes('mercari.com')) {
+          productName = getText(['h1[class*="name"]', 'h1[data-testid="name"]', 'p[data-testid="product-name"]', 'h1']);
+          description = getText(['[data-testid="description"]', 'p[class*="description"]', '[class*="ItemDescription"]']).substring(0, 300);
+          condition   = getText(['[data-testid="condition"]', '[class*="condition"]', 'span[class*="status"]']);
+          brand       = getText(['[data-testid="brand"]', '[class*="brand"]']);
+          price       = getText(['[data-testid="price"]', '[class*="price"] span', '[class*="ItemPrice"]']).replace(/[^0-9]/g, '');
+          currency    = 'JPY';
+        } else if (host.includes('auctions.yahoo.co.jp') || host.includes('buyee.jp')) {
+          productName = getText(['h1[class*="Product__title"]', '.Product__title', 'h1']);
+          description = getText(['.ProductExplanation__itemDescription', '.ProductDetail__description', '[class*="description"]']).substring(0, 300);
+          condition   = getText(['.ProductDetail__condition', '[class*="condition"]']);
+          price       = getText(['.Price__value', '.Auction__price', '.ProductDetail__price', '[class*="price"]']).replace(/[^0-9]/g, '');
+          currency    = 'JPY';
+        } else if (host.includes('hardoff.co.jp') || host.includes('bookoff.co.jp')) {
+          productName = getText(['h1', '.item-name', '.product-name']);
+          description = getText(['.item-detail', '.product-detail', '.description']).substring(0, 300);
+          price       = getText(['.price', '.item-price', '[class*="price"]']).replace(/[^0-9]/g, '');
+          currency    = 'JPY';
+        } else if (host.includes('ebay.com')) {
+          productName = getText(['h1#itemTitle', 'h1[itemprop="name"]', 'h1']);
+          description = getText(['#viTabs_0_is', '#itemDescriptionURL', '[itemprop="description"]']).substring(0, 300);
+          brand       = getText(['[itemprop="brand"]', '[data-testid="x-item-specifics"] [class*="brand"]']);
+          condition   = getText(['#condText', '[itemprop="itemCondition"]']);
+          price       = getText(['.x-price-primary span', '[itemprop="price"]', '#prcIsum']).replace(/[^0-9.]/g, '');
+          currency    = 'USD';
+        }
+
+        if (jsonldProduct) {
+          if (!productName) productName = jsonldProduct.name || '';
+          if (!brand && jsonldProduct.brand) brand = typeof jsonldProduct.brand === 'string' ? jsonldProduct.brand : (jsonldProduct.brand.name || '');
+          if (!description && jsonldProduct.description) description = String(jsonldProduct.description).substring(0, 300);
+          if (!condition && jsonldProduct.itemCondition) condition = String(jsonldProduct.itemCondition).replace(/https?:\/\/schema\.org\//, '').replace('Condition', '');
+        }
+
+        if (!productName) productName = getText(['h1']) || getMeta(['og:title']) || document.title;
+        if (!description) description = getMeta(['og:description', 'description']).substring(0, 300);
+
+        return { url: url, host: host, productName: productName, brand: brand, condition: condition, description: description, price: price, currency: currency };
+      }
+    }, function (results) {
+      if (chrome.runtime.lastError) { cb(null, chrome.runtime.lastError.message); return; }
+      if (results && results[0] && results[0].result) {
+        cb(results[0].result, null);
+      } else {
+        cb(null, 'ページ情報を取得できませんでした');
+      }
+    });
+  });
+}
+
+function callOpenAIWatch(pageInfo, cb) {
+  var lines = ['Product URL: ' + pageInfo.url, 'Product name: ' + (pageInfo.productName || '')];
+  if (pageInfo.brand)       lines.push('Brand: ' + pageInfo.brand);
+  if (pageInfo.condition)   lines.push('Condition: ' + pageInfo.condition);
+  if (pageInfo.description) lines.push('Description: ' + pageInfo.description);
+  if (pageInfo.price)       lines.push('Price: ' + pageInfo.price + (pageInfo.currency ? ' ' + pageInfo.currency : ''));
+
+  var userContent = lines.join('\n');
+
+  var systemPrompt = [
+    'You are a watch customs expert. Given product information from a Japanese secondhand watch listing, extract watch details.',
+    'Return ONLY a JSON object with these exact fields:',
+    '  "brand": watch brand name (e.g. "Citizen", "Seiko", "Casio")',
+    '  "reference": model number or reference (e.g. "BM8180-03E")',
+    '  "movementType": one of exactly: "Quartz", "Automatic", "Manual"',
+    '  "displayType": one of exactly: "Analog", "Digital", "Analog-Digital"',
+    '  "bandMaterial": one of exactly: "Textile", "Metal", "Leather", "No Band"',
+    '  "bandDetail": specific band material (e.g. "Stainless Steel", "Leather (Cow)", "Rubber")',
+    '  "caseMaterial": one of exactly: "NOT Gold/Silver Plated", "Gold/Silver Plated", "Metal Clad w/Precious Metal", "Wholly of Precious Metal", "Other"',
+    '  "caseDetail": specific case base material (e.g. "Stainless Steel", "Titanium", "Brass")',
+    '  "backplateMaterial": one of exactly: "Other", "Wholly of Precious Metal"',
+    '  "backplateDetail": specific backplate material (e.g. "Stainless Steel", "Titanium")',
+    '  "country": country of origin, default "Japan" for Japanese marketplace listings',
+    '  "htsus": suggested HTSUS code, 10 digits no dots (e.g. "9102215040"). Use 9102215040 for quartz non-precious-case wristwatch, 9102217010 for mechanical non-precious-case.',
+    '  "reason": one sentence in Japanese summarizing what was identified',
+    'Return ONLY the JSON. No markdown, no explanation.'
+  ].join('\n');
+
+  fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.openaiKey },
+    body: JSON.stringify({
+      model: 'gpt-5.4',
+      messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userContent }],
+      max_completion_tokens: 400
+    })
+  })
+  .then(function (r) {
+    if (!r.ok) return r.json().then(function (errBody) { throw new Error((errBody.error && errBody.error.message) || ('HTTP ' + r.status)); });
+    return r.json();
+  })
+  .then(function (data) {
+    var content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!content) throw new Error('AIからの応答が空でした');
+    var match = content.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('AIの応答にJSONが含まれていませんでした');
+    try { cb(null, JSON.parse(match[0])); } catch (e) { throw new Error('JSONの解析に失敗しました: ' + e.message); }
+  })
+  .catch(function (e) { cb(e, null); });
+}
+
+function fillFromAi(aiData) {
+  // 直接入力タブに切り替え
+  switchInputMode('direct');
+
+  // 各フィールドに流し込む
+  var set = function (id, val) {
+    var el = document.getElementById(id);
+    if (el && val !== undefined && val !== null) el.value = val;
+  };
+
+  set('watch_di_brand', aiData.brand || '');
+  set('watch_di_reference', aiData.reference || '');
+
+  // selectの値は選択肢に一致するものだけセット
+  var validMovement = ['Quartz', 'Automatic', 'Manual'];
+  if (aiData.movementType && validMovement.indexOf(aiData.movementType) !== -1) {
+    set('watch_di_movementType', aiData.movementType);
+  }
+  var validDisplay = ['Analog', 'Digital', 'Analog-Digital'];
+  if (aiData.displayType && validDisplay.indexOf(aiData.displayType) !== -1) {
+    set('watch_di_displayType', aiData.displayType);
+  }
+  var validBand = ['Textile', 'Metal', 'Leather', 'No Band'];
+  if (aiData.bandMaterial && validBand.indexOf(aiData.bandMaterial) !== -1) {
+    set('watch_di_bandMaterial', aiData.bandMaterial);
+  }
+  set('watch_di_bandDetail', aiData.bandDetail || '');
+
+  var validCase = ['NOT Gold/Silver Plated', 'Gold/Silver Plated', 'Metal Clad w/Precious Metal', 'Wholly of Precious Metal', 'Other'];
+  if (aiData.caseMaterial && validCase.indexOf(aiData.caseMaterial) !== -1) {
+    set('watch_di_caseMaterial', aiData.caseMaterial);
+  }
+  set('watch_di_caseDetail', aiData.caseDetail || '');
+
+  var validBack = ['Other', 'Wholly of Precious Metal'];
+  if (aiData.backplateMaterial && validBack.indexOf(aiData.backplateMaterial) !== -1) {
+    set('watch_di_backplateMaterial', aiData.backplateMaterial);
+  }
+  set('watch_di_backplateDetail', aiData.backplateDetail || '');
+
+  // 製造国（一括セット → changeイベントで各パーツに反映）
+  var countryEl = document.getElementById('watch_di_countryMain');
+  if (countryEl && aiData.country) {
+    var countryOptions = Array.from(countryEl.options).map(function (o) { return o.value; });
+    if (countryOptions.indexOf(aiData.country) !== -1) {
+      countryEl.value = aiData.country;
+    } else {
+      countryEl.value = 'Other';
+    }
+    countryEl.dispatchEvent(new Event('change'));
+  }
+
+  // ムーブメント変更の副作用を反映
+  document.getElementById('watch_di_movementType').dispatchEvent(new Event('change'));
+
+  // HTSUSコード（10桁数字 → ####.##.#### 形式に変換）
+  if (aiData.htsus) {
+    var digits = String(aiData.htsus).replace(/[^0-9]/g, '');
+    if (digits.length === 10) {
+      var formatted = digits.slice(0, 4) + '.' + digits.slice(4, 6) + '.' + digits.slice(6, 10);
+      set('watch_di_htsCode', formatted);
+      validateHtsFormat(formatted);
+    }
+  }
+
+  // HTSUS候補ヒントも更新
+  updateHtsHint();
+
+  // AIバッジ表示
+  var badge = document.getElementById('watch_aiResultBadge');
+  if (badge) {
+    var reasonText = aiData.reason ? '💡 ' + aiData.reason : '';
+    badge.innerHTML = '✨ <strong>AI入力補助</strong> — 内容を確認・修正してください。<strong>価格は必ず手入力してください</strong>（申告価格と出品価格が異なる場合があります）。' +
+      (reasonText ? '<div class="ai-reason">' + escapeHtml(reasonText) + '</div>' : '');
+    badge.style.display = 'block';
+  }
+
+  // AI読み取り完了後は「印刷プレビューへ直接進む」ボタンを表示
+  var printDirectBtn = document.getElementById('watch_di_printDirectBtn');
+  if (printDirectBtn) printDirectBtn.style.display = 'block';
+}
+
+// ---------------------------------------------------------
+// Watch Worksheet機能: イベント登録
+// ---------------------------------------------------------
+window.addEventListener('load', function () {
+  setupInputSection();
+  setupWizardSection();
+  setupPrintSection();
+
+  // ホームの緑ボタン「⌚ AIでWatch Worksheetを作成する」
+  document.getElementById('watchAiHomeBtn').addEventListener('click', startWatchAiFlowHome);
+
+  // ホームの「⌚ Watch Worksheetを手動で作成」リンク → 入力方式選択（貼り付け/直接入力）へ
+  document.getElementById('watchManualLink').addEventListener('click', function () {
+    showSection('watch_sectionInput');
+  });
 });
