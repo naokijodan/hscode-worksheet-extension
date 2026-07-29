@@ -3977,8 +3977,12 @@ function setupDirectForm() {
     applyMainCountry();
   });
 
-  // HTSUSコードのリアルタイム形式チェック
+  // HTSUSコードのリアルタイム形式チェック（ドット・ハイフン・空白は自動除去して数字のみに整える）
   document.getElementById('watch_di_htsCode').addEventListener('input', function () {
+    var normalized = stripDots(this.value);
+    if (normalized !== this.value) {
+      this.value = normalized;
+    }
     validateHtsFormat(this.value);
   });
 
@@ -4095,13 +4099,14 @@ function updateHtsHint() {
   hint.appendChild(label);
 
   candidates.forEach(function (c, i) {
+    var codeDigits = stripDots(c.code);
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'watch-hts-candidate-btn';
-    btn.textContent = c.code + ' — ' + c.desc;
+    btn.textContent = codeDigits + ' — ' + c.desc;
     btn.addEventListener('click', function () {
-      document.getElementById('watch_di_htsCode').value = c.code;
-      validateHtsFormat(c.code);
+      document.getElementById('watch_di_htsCode').value = codeDigits;
+      validateHtsFormat(codeDigits);
     });
     hint.appendChild(btn);
     if (i < candidates.length - 1) {
@@ -4111,7 +4116,7 @@ function updateHtsHint() {
 }
 
 /**
- * 10桁形式チェック: ####.##.#### の形式か確認。
+ * 10桁形式チェック: ドット・ハイフン・空白を除去した結果が数字10桁か確認。
  */
 function validateHtsFormat(val) {
   var errEl = document.getElementById('watch_di_htsError');
@@ -4121,10 +4126,10 @@ function validateHtsFormat(val) {
     errEl.style.display = 'none';
     return;
   }
-  // 形式: 4桁.2桁.4桁 = 10桁数字 + 2ドット
-  var ok = /^\d{4}\.\d{2}\.\d{4}$/.test(trimmed);
+  // 形式: ドット・ハイフン・空白を除去した結果が10桁の数字
+  var ok = /^\d{10}$/.test(stripDots(trimmed));
   if (!ok) {
-    errEl.textContent = '形式が正しくありません。例: 9102.21.5040 (10桁・ドット区切り)';
+    errEl.textContent = '形式が正しくありません。10桁の数字で入力してください（例: 9102215040）';
     errEl.style.display = 'block';
   } else {
     errEl.style.display = 'none';
@@ -4244,7 +4249,7 @@ function buildDirectData(config) {
     companyName:      (config || {}).companyName || '',
     nameAndTitle:     (config || {}).nameAndTitle || '',
     email:            (config || {}).email || '',
-    awbNumber:        ''
+    awbNumber:        document.getElementById('watch_di_awb').value.trim()
   };
 
   // over12mm はウィザードB4（f_over12mm）に直接セットする
@@ -4279,8 +4284,8 @@ function handleDirectCreate() {
 
   // HTSUS形式チェック（入力されている場合のみ）
   var htsVal = document.getElementById('watch_di_htsCode').value.trim();
-  if (htsVal && !/^\d{4}\.\d{2}\.\d{4}$/.test(htsVal)) {
-    showDirectMessage('HTSUSコードの形式が正しくありません。例: 9102.21.5040', 'error');
+  if (htsVal && !/^\d{10}$/.test(stripDots(htsVal))) {
+    showDirectMessage('HTSUSコードの形式が正しくありません。10桁の数字で入力してください（例: 9102215040）', 'error');
     return;
   }
 
@@ -4322,8 +4327,8 @@ function handleDirectToPreview() {
     showDirectMessage('HTSUSコードを入力してください。', 'error');
     return;
   }
-  if (!/^\d{4}\.\d{2}\.\d{4}$/.test(htsVal)) {
-    showDirectMessage('HTSUSコードの形式が正しくありません。例: 9102.21.5040', 'error');
+  if (!/^\d{10}$/.test(stripDots(htsVal))) {
+    showDirectMessage('HTSUSコードの形式が正しくありません。10桁の数字で入力してください（例: 9102215040）', 'error');
     return;
   }
 
@@ -4487,7 +4492,7 @@ var WIZARD_FIELDS = [
     }
   },
   // Block 7
-  { blockId: 7, fieldId: 'watch_f_awb',            rowNum: 39, getInitial: function()  { return ''; } },
+  { blockId: 7, fieldId: 'watch_f_awb',            rowNum: 39, getInitial: function(d){ return d.awbNumber || ''; } },
   { blockId: 7, fieldId: 'watch_f_wiz_companyName', rowNum: 36, getInitial: function(d){ return d.companyName || ''; } },
   { blockId: 7, fieldId: 'watch_f_wiz_nameAndTitle', rowNum: 37, getInitial: function(d){ return d.nameAndTitle || ''; } },
   { blockId: 7, fieldId: 'watch_f_wiz_email',      rowNum: 38, getInitial: function(d){ return d.email || ''; } }
@@ -4676,7 +4681,7 @@ function buildFinalCells() {
   col[36] = data.companyName  || '';
   col[37] = data.nameAndTitle || '';
   col[38] = data.email        || '';
-  col[39] = '';
+  col[39] = data.awbNumber    || '';
 
   // gCells の値で上書き（ウィザードで編集した値が最終出力に反映）
   Object.keys(gCells).forEach(function (rowNum) {
@@ -5071,13 +5076,12 @@ function fillFromAi(aiData) {
   // ムーブメント変更の副作用を反映
   document.getElementById('watch_di_movementType').dispatchEvent(new Event('change'));
 
-  // HTSUSコード（10桁数字 → ####.##.#### 形式に変換）
+  // HTSUSコード（数字10桁のままセット。ドット付きへの変換はしない）
   if (aiData.htsus) {
     var digits = String(aiData.htsus).replace(/[^0-9]/g, '');
     if (digits.length === 10) {
-      var formatted = digits.slice(0, 4) + '.' + digits.slice(4, 6) + '.' + digits.slice(6, 10);
-      set('watch_di_htsCode', formatted);
-      validateHtsFormat(formatted);
+      set('watch_di_htsCode', digits);
+      validateHtsFormat(digits);
     }
   }
 
