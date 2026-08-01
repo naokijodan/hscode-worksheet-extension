@@ -1122,9 +1122,21 @@
       <button class="link-btn" id="watch_backToWizardBtn">← ウィザードへ戻る</button>
     </div>
 
+    <div id="watch_printMessage" class="message" role="alert" style="display:none;"></div>
+
     <div class="print-note">
       <strong>印刷/PDF保存について：</strong>「印刷/PDFとして保存」ボタンを押すと別ウィンドウが開きます。
       ブラウザの印刷ダイアログで <strong>「背景のグラフィック」をオンにする</strong>と、背景色が正しく印刷されます。
+    </div>
+
+    <!-- ===== 複数時計（最大5本）管理パネル ===== -->
+    <div class="watch-multi-panel" id="watch_multiPanel">
+      <div class="watch-multi-summary" id="watch_multiSummary">登録済み: 1 / 5 本</div>
+      <div class="watch-multi-list" id="watch_multiList"></div>
+      <div class="watch-multi-note" id="watch_multiNote" style="display:none;">
+        印刷はフェデックス様式（列形式）で出力されます。
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" id="watch_addWatchBtn">＋ 時計を追加（最大5本）</button>
     </div>
 
     <div class="ws-actions">

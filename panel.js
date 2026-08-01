@@ -3812,6 +3812,29 @@ let gCells = {};
 /** 全7ブロックを通過したか */
 let gAllBlocksDone = false;
 
+/**
+ * 複数本（最大5本）まとめて処理するためのリスト。
+ * 「＋時計を追加」で確定済みの current watch（gData/gCells）が1件ずつ積まれる。
+ * 各要素: { data: <gDataのスナップショット>, cells: <gCellsのスナップショット> }
+ * 「現在編集中の1本」は引き続き gData/gCells が保持する（このリストには含めない）。
+ */
+let gWatchList = [];
+
+/** 登録できる時計の上限本数（current + gWatchList の合計） */
+var MAX_WATCHES = 5;
+
+/**
+ * 「編集」中の保留状態。editWatchEntry() でリストから取り出した1本を、
+ * ウィザードを最後まで終えずに（＝blockDone[7]まで到達せず）中断した場合、
+ * この2つを使って元の（未編集の）状態をリストへ安全に戻す。
+ *   gEditingListIndex … 編集対象がリストの何番目にあったか（nullなら編集中ではない）
+ *   gEditingBackup     … 編集前のオリジナルのスナップショット（half-editedなgData/gCellsではなく、これを戻す）
+ * どちらも「編集を最後まで完了した」「新規に別の1本を確定した」「全部リセットした」時点で
+ * null に戻す（= もう戻す必要がなくなったことを示す）。
+ */
+let gEditingListIndex = null;
+let gEditingBackup = null;
+
 /** state.company（_hsCompany、既に loadSettings() でロード済み）を
  *  worksheet.js の config 引数の形（companyName/nameAndTitle/email）に変換する。 */
 function watchGetCompanyConfig() {
@@ -3921,6 +3944,19 @@ function handleCreate() {
 
   if (!result.success) {
     showInputMessage(result.message, 'error');
+    return;
+  }
+
+  // 今から新しい current を作る＝今の current を捨てる操作。
+  // それが「編集中」の1本だった場合に備え、オリジナルをリストへ戻してから進む。
+  restorePendingEditIfAny();
+  if (gWatchList.length >= MAX_WATCHES) {
+    // watch_sectionInput にはこの後遷移させない＝あちらのメッセージ欄は誰にも見えない。
+    // データ（5本のリスト）を見て操作できる画面（リスト/印刷）へ連れ戻し、そこで案内する。
+    renderCurrentWatchPreview();
+    renderMultiWatchList();
+    showSection('watch_sectionPrint');
+    showPrintMessage('時計は最大' + MAX_WATCHES + '本です。リストから削除するとまた追加できます。', 'error');
     return;
   }
 
@@ -4289,6 +4325,19 @@ function handleDirectCreate() {
     return;
   }
 
+  // 今から新しい current を作る＝今の current を捨てる操作。
+  // それが「編集中」の1本だった場合に備え、オリジナルをリストへ戻してから進む。
+  restorePendingEditIfAny();
+  if (gWatchList.length >= MAX_WATCHES) {
+    // watch_sectionInput にはこの後遷移させない＝あちらのメッセージ欄は誰にも見えない。
+    // データ（5本のリスト）を見て操作できる画面（リスト/印刷）へ連れ戻し、そこで案内する。
+    renderCurrentWatchPreview();
+    renderMultiWatchList();
+    showSection('watch_sectionPrint');
+    showPrintMessage('時計は最大' + MAX_WATCHES + '本です。リストから削除するとまた追加できます。', 'error');
+    return;
+  }
+
   var config = watchGetCompanyConfig();
   var data = buildDirectData(config);
 
@@ -4332,6 +4381,19 @@ function handleDirectToPreview() {
     return;
   }
 
+  // 今から新しい current を作る＝今の current を捨てる操作。
+  // それが「編集中」の1本だった場合に備え、オリジナルをリストへ戻してから進む。
+  restorePendingEditIfAny();
+  if (gWatchList.length >= MAX_WATCHES) {
+    // watch_sectionInput にはこの後遷移させない＝あちらのメッセージ欄は誰にも見えない。
+    // データ（5本のリスト）を見て操作できる画面（リスト/印刷）へ連れ戻し、そこで案内する。
+    renderCurrentWatchPreview();
+    renderMultiWatchList();
+    showSection('watch_sectionPrint');
+    showPrintMessage('時計は最大' + MAX_WATCHES + '本です。リストから削除するとまた追加できます。', 'error');
+    return;
+  }
+
   var currency = document.getElementById('watch_di_currency').value || 'USD';
   var confirmed = window.confirm(
     '印刷プレビューに進む前に、以下をすべて確認しましたか？\n\n' +
@@ -4364,6 +4426,30 @@ function showDirectMessage(text, type) {
       el.style.display = 'none';
     }, 10000);
   }
+}
+
+/**
+ * watch_sectionInput 側の showInputMessage/showDirectMessage と同じ表示パターンを、
+ * watch_sectionPrint（リスト/印刷画面）向けに提供する。
+ * 5本フルの状態で新規作成をブロックし、リスト画面へ強制的に呼び戻すケース
+ * （watch_sectionInput はもう表示されていないため、あちらのメッセージ欄は見えない）で使う。
+ */
+function showPrintMessage(text, type) {
+  var el = document.getElementById('watch_printMessage');
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'message ' + type;
+  el.style.display = 'block';
+  if (type === 'error' || type === 'warn') {
+    setTimeout(function () {
+      el.style.display = 'none';
+    }, 10000);
+  }
+}
+
+function hidePrintMessage() {
+  var el = document.getElementById('watch_printMessage');
+  if (el) el.style.display = 'none';
 }
 
 // ---------------------------------------------------------
@@ -4503,10 +4589,24 @@ var TOTAL_BLOCKS = 7;
 var blockDone = {};
 
 function initWizard(data) {
-  // 全ブロックのフィールドに初期値を設定
+  initWizardWithCells(data, null);
+}
+
+/**
+ * initWizard の拡張版。cells が渡された場合、各フィールドの初期値は
+ * 「cells[rowNum] があればそれを優先、なければ f.getInitial(data)」で決める。
+ * 複数時計の「編集」機能で、保存済みの gCells 上書き値を失わずに
+ * ウィザードへ復元するために使う。cells が null/未指定なら従来の initWizard と完全に同じ挙動。
+ */
+function initWizardWithCells(data, cells) {
+  var overrides = cells || {};
+
+  // 全ブロックのフィールドに初期値を設定（cellsの上書きがあれば優先）
   WIZARD_FIELDS.forEach(function (f) {
     var el = document.getElementById(f.fieldId);
-    if (el) el.value = f.getInitial(data);
+    if (!el) return;
+    var override = overrides[f.rowNum];
+    el.value = (override !== undefined) ? override : f.getInitial(data);
   });
 
   // 全ブロックのdone状態をリセット
@@ -4521,6 +4621,9 @@ function initWizard(data) {
 
 function setupWizardSection() {
   document.getElementById('watch_backToInputFromWizard').addEventListener('click', function () {
+    // 中断＝今の current を捨てる操作。もしこれが「編集中」の1本なら、
+    // 無言で消してしまわないよう編集前のオリジナルをリストへ戻す。
+    restorePendingEditIfAny();
     gData = null;
     showSection('watch_sectionInput');
   });
@@ -4550,6 +4653,11 @@ function setupWizardSection() {
     blockDone[7] = true;
     gAllBlocksDone = true;
     updateProgress();
+    // 編集を最後まで完了した＝この1本がそのまま current として確定する。
+    // オリジナルへ戻す必要はなくなったので、保留中の編集マーカーだけクリアする
+    // （新規作成の完了時もここを通るが、その場合はもともと未設定なので単なるno-op）。
+    gEditingListIndex = null;
+    gEditingBackup = null;
     buildPreviewAndShow();
   });
 }
@@ -4590,23 +4698,48 @@ function setupPrintSection() {
   });
 
   document.getElementById('watch_backToInputFinalBtn').addEventListener('click', function () {
+    // 「最初からやり直す」＝完全リセット。current だけでなく、
+    // 積み上げた複数時計リスト（gWatchList）、保留中の編集状態も含めて全部破棄する。
     gData = null;
     gCells = {};
     gAllBlocksDone = false;
+    gWatchList = [];
+    gEditingListIndex = null;
+    gEditingBackup = null;
+    resetWatchInputForms();
+    renderMultiWatchList();
     showSection('watch_sectionInput');
   });
 
   document.getElementById('watch_openPrintWindowBtn').addEventListener('click', function () {
     openPrintWindow();
   });
+
+  var addWatchBtn = document.getElementById('watch_addWatchBtn');
+  if (addWatchBtn) {
+    addWatchBtn.addEventListener('click', function () {
+      addCurrentWatchAndContinue();
+    });
+  }
 }
 
 /**
- * ウィザードの gCells を反映した最終39行分のセル値マップを組み立てる。
+ * ウィザードの gCells を反映した最終39行分のセル値マップを組み立てる（現在編集中の1本＝gData/gCells用）。
+ * gData が null（＝現在編集中の1本がない状態。5本フルの状態でリストへ戻された直後など）の場合は
+ * 空オブジェクトを返す。呼び出し側で data.xxx への直接アクセスが起きて落ちないようにするための安全弁。
  */
 function buildFinalCells() {
+  if (!gData) return {};
+  return buildFinalCellsFor(gData, gCells);
+}
+
+/**
+ * buildFinalCells の汎用版。任意の data/cells の組から39行分のセル値マップを組み立てる。
+ * 複数時計リスト（gWatchList）内の各エントリーを印刷用に変換する際にも使う。
+ */
+function buildFinalCellsFor(data, cells) {
   var col = {};
-  var data = gData;
+  cells = cells || {};
 
   col[3]  = data.styleRef || '';
   col[4]  = 'Wrist';
@@ -4683,9 +4816,9 @@ function buildFinalCells() {
   col[38] = data.email        || '';
   col[39] = data.awbNumber    || '';
 
-  // gCells の値で上書き（ウィザードで編集した値が最終出力に反映）
-  Object.keys(gCells).forEach(function (rowNum) {
-    col[parseInt(rowNum, 10)] = gCells[rowNum];
+  // cells の値で上書き（ウィザードで編集した値が最終出力に反映）
+  Object.keys(cells).forEach(function (rowNum) {
+    col[parseInt(rowNum, 10)] = cells[rowNum];
   });
 
   return col;
@@ -4737,7 +4870,7 @@ var ROW_LABELS = [
 var VALUE_BREAKOUT_ROWS = new Set([29,30,31,32,33,34]);
 var COMPANY_ROWS        = new Set([36,37,38,39]);
 
-function renderTable(tableEl, col) {
+function renderTable(tableEl, col, watchLabel) {
   tableEl.innerHTML = '';
 
   var trTitle = document.createElement('tr');
@@ -4753,7 +4886,7 @@ function renderTable(tableEl, col) {
   tdHLabel.textContent = '';
   tdHLabel.className = 'ws-header';
   var tdHValue = document.createElement('td');
-  tdHValue.textContent = 'Watch 1';
+  tdHValue.textContent = watchLabel || 'Watch 1';
   tdHValue.className = 'ws-header';
   trHeader.appendChild(tdHLabel);
   trHeader.appendChild(tdHValue);
@@ -4783,11 +4916,249 @@ function renderTable(tableEl, col) {
   });
 }
 
-function buildPreviewAndShow() {
-  var col   = buildFinalCells();
+/**
+ * 画面上部の「現在編集中の1本」プレビュー表を描画する。
+ * gData がある（＝通常どおり、確認ウィザードを完了した／プレビューへ直接進んだ）場合は
+ * 従来どおりの39行テーブルを描画する。
+ * gData が null（＝5本フルの状態で編集を中断し、current が無いままリスト画面へ戻された等）の
+ * 場合は、直前の（すでに用済みの）内容を残さず、「現在編集中の時計はない」ことが分かる
+ * プレースホルダーに差し替える。印刷対象はあくまで gWatchList のみになる。
+ */
+function renderCurrentWatchPreview() {
   var table = document.getElementById('watch_previewTable');
-  renderTable(table, col);
+  if (!table) return;
+
+  if (gData) {
+    var col        = buildFinalCells();
+    // gWatchList に何本積まれているかで「現在編集中の1本」の通し番号が決まる
+    // （リストが空＝1本目の場合は従来どおり常に "Watch 1"）。
+    var watchLabel = 'Watch ' + (gWatchList.length + 1);
+    renderTable(table, col, watchLabel);
+    return;
+  }
+
+  table.innerHTML = '';
+  var tr = document.createElement('tr');
+  var td = document.createElement('td');
+  td.colSpan = 2;
+  td.className = 'ws-data';
+  td.style.textAlign = 'left';
+  td.textContent = '現在編集中の時計はありません。下のリストから印刷・編集・削除できます。';
+  tr.appendChild(td);
+  table.appendChild(tr);
+}
+
+function buildPreviewAndShow() {
+  renderCurrentWatchPreview();
+  renderMultiWatchList();
+  hidePrintMessage(); // 前回の（もう関係ない）案内メッセージを残さない
   showSection('watch_sectionPrint');
+}
+
+// ---------------------------------------------------------
+// 複数時計（最大5本）リスト管理
+// ---------------------------------------------------------
+// 1本だけ作る通常フローの見た目・挙動は一切変えない。
+// 「＋時計を追加」を押したときだけ gWatchList にスナップショットが積まれ、
+// 印刷時に現在編集中の1本と合わせて出力される。
+
+/** JSON経由の単純ディープコピー（gData/gCellsはプレーンなオブジェクトのみを持つ前提） */
+function cloneWatchState(obj) {
+  return obj ? JSON.parse(JSON.stringify(obj)) : obj;
+}
+
+/** 現在「印刷対象」になる本数（保存済みリスト + 編集中の1本） */
+function effectiveWatchCount() {
+  return gWatchList.length + (gData ? 1 : 0);
+}
+
+function watchEntryTitle(data) {
+  return (data && data.styleRef) ? data.styleRef : '(名称未設定)';
+}
+
+function watchEntryValueText(data) {
+  if (!data || data.totalValue === undefined || data.totalValue === null || data.totalValue === '') return '';
+  var cur = data.currency || 'USD';
+  var num = Number(data.totalValue);
+  return (isNaN(num) ? data.totalValue : num.toFixed(2)) + ' ' + cur;
+}
+
+/**
+ * 保存済みリスト（gWatchList）＋現在編集中の1本の状況をプレビュー画面に描画する。
+ * buildPreviewAndShow のたびと、追加/編集/削除のたびに呼び出す。
+ */
+function renderMultiWatchList() {
+  var summaryEl = document.getElementById('watch_multiSummary');
+  var listEl    = document.getElementById('watch_multiList');
+  var noteEl    = document.getElementById('watch_multiNote');
+  var addBtn    = document.getElementById('watch_addWatchBtn');
+  if (!summaryEl || !listEl || !addBtn) return; // HTML未対応の環境向けガード
+
+  var total = effectiveWatchCount();
+  summaryEl.textContent = '登録済み: ' + total + ' / ' + MAX_WATCHES + ' 本';
+
+  listEl.innerHTML = '';
+  gWatchList.forEach(function (entry, idx) {
+    var row = document.createElement('div');
+    row.className = 'watch-multi-row';
+
+    var label = document.createElement('span');
+    label.className = 'watch-multi-row-label';
+    label.textContent = 'No.' + (idx + 1) + '　' + watchEntryTitle(entry.data) + '　' + watchEntryValueText(entry.data);
+    row.appendChild(label);
+
+    var editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'btn btn-ghost btn-sm';
+    editBtn.textContent = '編集';
+    editBtn.addEventListener('click', function () { editWatchEntry(idx); });
+    row.appendChild(editBtn);
+
+    var delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'btn btn-ghost btn-sm watch-multi-delete';
+    delBtn.textContent = '削除';
+    delBtn.addEventListener('click', function () { deleteWatchEntry(idx); });
+    row.appendChild(delBtn);
+
+    listEl.appendChild(row);
+  });
+
+  if (noteEl) noteEl.style.display = (total >= 2) ? '' : 'none';
+
+  var canAdd = total < MAX_WATCHES;
+  addBtn.style.display = canAdd ? '' : 'none';
+  addBtn.disabled = !canAdd;
+}
+
+/**
+ * 「＋時計を追加（最大5本）」ボタン。
+ * 通常は、現在編集中の1本（gData/gCells）をリストへスナップショットとして積んでから
+ * 次の1本の入力画面へ戻る。
+ * gData が null（＝current が無い「リストのみ」の状態。5本フルの状態で編集を中断し
+ * ブロックされてこのリスト画面へ戻された直後など）の場合は、積む対象が無いので
+ * その部分だけ飛ばし、入力画面へのナビゲーションだけ行う
+ * （＝このボタンが唯一の「リストのみの状態から次の1本を作り始める」導線のため、
+ *   ここで無言で何もしないと詰みになる）。
+ */
+function addCurrentWatchAndContinue() {
+  if (effectiveWatchCount() >= MAX_WATCHES) return; // ボタンは非表示のはずだが二重ガード
+
+  if (gData) {
+    gWatchList.push({ data: cloneWatchState(gData), cells: cloneWatchState(gCells) });
+    gData = null;
+  }
+
+  gCells = {};
+  gAllBlocksDone = false;
+  // この時点で current は必ずウィザードを完了済み（confirmDoneBtn or handleDirectToPreview経由）
+  // なので、通常は既に null のはず。念のための二重クリア。
+  gEditingListIndex = null;
+  gEditingBackup = null;
+
+  resetWatchInputForms();
+  showSection('watch_sectionInput');
+}
+
+/**
+ * リスト内の1本を「編集」する。
+ * 今 current になっている1本（あれば）はいったんリストへ退避してから、
+ * 編集対象をリストから取り出して current にし、ウィザードをBlock1から開き直す。
+ * 保存済みの gCells 上書き値は initWizardWithCells で復元し、失わない。
+ * 編集し直した1本は、確認ウィザードを7ブロックすべて通過するまでリストへは戻らない
+ * （再度「＋時計を追加」した時点、または印刷時に current として合流する）。
+ *
+ * 編集前のオリジナル（未編集）は gEditingBackup / gEditingListIndex として保持しておく。
+ * ウィザードを完了せずに中断された場合、half-edited な状態ではなくこのオリジナルを
+ * リストへ戻す（restorePendingEditIfAny 参照）。これをしないと「編集→中断」で
+ * その1本が無言で消え、印刷対象から漏れてしまう（申告漏れリスク）。
+ */
+function editWatchEntry(index) {
+  var entry = gWatchList[index];
+  if (!entry) return;
+
+  gEditingBackup     = cloneWatchState(entry);
+  gEditingListIndex  = index;
+
+  if (gData) {
+    gWatchList.push({ data: cloneWatchState(gData), cells: cloneWatchState(gCells) });
+  }
+  gWatchList.splice(index, 1);
+
+  gData = cloneWatchState(entry.data);
+  gCells = {};
+  gAllBlocksDone = false;
+
+  initWizardWithCells(gData, entry.cells || {});
+  showSection('watch_sectionWizard');
+}
+
+/**
+ * 「編集」を最後まで完了せずに中断した場合に呼ぶ安全弁。
+ * gEditingListIndex が設定されている（＝編集中断が起きうる状態）なら、
+ * 編集前のオリジナル（gEditingBackup）を元の位置へ差し戻してから、
+ * 保留状態をクリアする。編集中でなければ何もしない（no-op、他のフローに影響なし）。
+ *
+ * 呼び出しポイント: 「← 最初から」（watch_backToInputFromWizard）、および
+ * handleCreate / handleDirectCreate / handleDirectToPreview の先頭
+ * （＝いずれも「今の current を捨てて新しい1本を始める」操作のため、
+ *   捨てられる current が実は編集中だった場合は必ずここを通る）。
+ */
+function restorePendingEditIfAny() {
+  if (gEditingListIndex === null || gEditingListIndex === undefined) return;
+
+  if (gEditingBackup) {
+    gWatchList.splice(gEditingListIndex, 0, gEditingBackup);
+  }
+  gEditingListIndex = null;
+  gEditingBackup = null;
+
+  // プレビュー画面が表示中でなくても呼び出し自体は無害（DOM要素が無ければ内部で早期return）。
+  renderMultiWatchList();
+}
+
+/** リスト内の1本を「削除」する（確認ダイアログあり。既存コードのwindow.confirmと同じ流儀）。 */
+function deleteWatchEntry(index) {
+  var entry = gWatchList[index];
+  if (!entry) return;
+
+  var label = watchEntryTitle(entry.data);
+  var ok = window.confirm('「' + label + '」をリストから削除します。よろしいですか？\nこの操作は取り消せません。');
+  if (!ok) return;
+
+  gWatchList.splice(index, 1);
+  renderMultiWatchList();
+}
+
+/**
+ * 「＋時計を追加」で次の1本へ進む際、入力フォーム（貼り付け／直接入力）の内容を
+ * 前の時計の値のまま残さないようにクリアする。gData/gCells/ウィザードのリセットとは別に必要。
+ */
+function resetWatchInputForms() {
+  var pasteForm = document.getElementById('watch_worksheetForm');
+  if (pasteForm) pasteForm.reset();
+  var directForm = document.getElementById('watch_directForm');
+  if (directForm) directForm.reset();
+
+  hideInputMessage();
+  var directMsg = document.getElementById('watch_directInputMessage');
+  if (directMsg) directMsg.style.display = 'none';
+
+  var badge = document.getElementById('watch_aiResultBadge');
+  if (badge) badge.style.display = 'none';
+
+  var titlePreview = document.getElementById('watch_di_titlePreview');
+  if (titlePreview) { titlePreview.style.display = 'none'; titlePreview.textContent = ''; }
+
+  var printDirectBtn = document.getElementById('watch_di_printDirectBtn');
+  if (printDirectBtn) printDirectBtn.style.display = 'none';
+
+  var htsError = document.getElementById('watch_di_htsError');
+  if (htsError) htsError.style.display = 'none';
+
+  // ムーブメント種別・ケース素材に連動する副作用（Jewels表示/バッテリー国/HTSUS候補）を再適用
+  onDirectMovementChange();
+  updateHtsHint();
 }
 
 // ---------------------------------------------------------
@@ -4798,9 +5169,34 @@ function buildPreviewAndShow() {
 // chrome.tabs.create + _watchPrintPayload + print-watch.html に変更している
 // （挙動は「印刷用の別タブが開く」という点で同一）。
 
+/**
+ * 印刷用ペイロードを組み立てる。
+ * 1本のみ（gWatchList が空で current の1本だけ）の場合は、従来どおりフラットな
+ * col オブジェクト（{3: ..., 4: ..., ...}）をそのまま返す＝挙動・データ形は完全に不変。
+ * 2本以上の場合だけ { multi: true, watches: [col1, col2, ...] } 形式にする。
+ */
+function buildPrintPayloadObject() {
+  var cols = gWatchList.map(function (entry) {
+    return buildFinalCellsFor(entry.data, entry.cells);
+  });
+  if (gData) {
+    cols.push(buildFinalCells());
+  }
+
+  if (cols.length <= 1) {
+    return cols[0] || {};
+  }
+  return { multi: true, watches: cols };
+}
+
 function openPrintWindow() {
-  var col     = buildFinalCells();
-  var payload = JSON.stringify(col);
+  if (effectiveWatchCount() === 0) {
+    showPrintMessage('印刷する時計がありません。「＋ 時計を追加」から入力してください。', 'error');
+    return;
+  }
+
+  var payloadObj = buildPrintPayloadObject();
+  var payload    = JSON.stringify(payloadObj);
 
   chrome.storage.local.set({ _watchPrintPayload: payload }, function () {
     if (chrome.runtime.lastError) {

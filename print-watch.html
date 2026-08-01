@@ -116,6 +116,45 @@
     }
 
     /* ===========================================
+       複数時計（2〜5本）専用レイアウト
+       1本のみの場合はここから下は一切使われない（従来どおり#worksheetTableのみ描画）。
+       =========================================== */
+    .watch-multi-page {
+      margin-bottom: 20px;
+    }
+
+    .watch-multi-table td:first-child {
+      white-space: normal;
+      max-width: 260px;
+    }
+
+    .watch-footer-wrap {
+      margin-top: 12px;
+      width: 55%;
+      min-width: 260px;
+    }
+
+    .watch-footer-table {
+      width: 100%;
+    }
+
+    @media print {
+      .watch-page-break {
+        page-break-after: always;
+        break-after: page;
+      }
+
+      .watch-footer-wrap {
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+
+      .watch-multi-table {
+        page-break-inside: avoid;
+      }
+    }
+
+    /* ===========================================
        印刷用スタイル
        =========================================== */
     @media print {
@@ -172,7 +211,7 @@
     <button class="btn-print" id="printBtn">印刷 / PDFとして保存</button>
   </div>
 
-  <table class="worksheet-table" id="worksheetTable" style="display:none;"></table>
+  <div id="printRoot" style="display:none;"></div>
 
   <script src="print-watch.js"></script>
 </body>
