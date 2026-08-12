@@ -1448,17 +1448,5 @@ select:focus {
   font-size: 11px;
 }
 
-@media (prefers-color-scheme: dark) {
-  .fedex-ai-candidate {
-    background: #4a3f1a;
-    border-color: #ffb300;
-  }
-  .fedex-result-ok {
-    background: #1b3a1e;
-    border-color: #4caf50;
-  }
-  .fedex-result-fail {
-    background: #3a1e1e;
-    border-color: #ef5350;
-  }
-}
+/* FedEx機能のダークモード個別指定は削除（パネルbodyは常にライト背景のため、
+   背景だけ暗転すると文字が読めなくなる。ライト配色で固定する） */
