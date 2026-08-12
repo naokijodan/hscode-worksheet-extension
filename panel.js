@@ -6095,8 +6095,8 @@ function fedexCallAiMakerCandidates(itemName, pageInfo, cb) {
   var userContent = lines.join('\n');
 
   var systemPrompt = [
-    'You are helping identify the manufacturer for a US customs declaration (FedEx shipment) of a Japanese toy, figure, or trading card product.',
-    'Return the official English LEGAL COMPANY NAME (juridical person) of the Japanese toy/figure/trading card manufacturer most likely responsible for this product — a legal entity name such as "BANDAI SPIRITS Co., Ltd.", NOT a brand name, product line name, or IP/franchise name.',
+    'You are helping identify the manufacturer for a US customs declaration (FedEx shipment) of a Japanese product (any genre, e.g. toys, figures, trading cards, apparel, electronics, watches, housewares, etc.).',
+    'Return the official English LEGAL COMPANY NAME (juridical person) of the manufacturer most likely responsible for this product — a legal entity name such as "BANDAI SPIRITS Co., Ltd.", NOT a brand name, product line name, or IP/franchise name.',
     'If you cannot determine a single manufacturer with confidence, return up to 3 plausible candidates, most likely first.',
     'Return ONLY a JSON object with exactly this field:',
     '  "candidates": an array of up to 3 objects, each with:',
