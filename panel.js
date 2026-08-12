@@ -75,7 +75,8 @@ function showSection(id) {
   var sections = ['sectionHome', 'sectionBrowse', 'sectionSettings', 'sectionWizard',
                   'sectionResult', 'sectionConfirm', 'sectionPrint',
                   'sectionCpscWiz', 'sectionCpscResult', 'sectionTsca',
-                  'watch_sectionInput', 'watch_sectionWizard', 'watch_sectionPrint'];
+                  'watch_sectionInput', 'watch_sectionWizard', 'watch_sectionPrint',
+                  'sectionFedex'];
   sections.forEach(function(sid) {
     var el = document.getElementById(sid);
     if (el) el.style.display = (sid === id) ? '' : 'none';
@@ -5513,4 +5514,1264 @@ window.addEventListener('load', function () {
   document.getElementById('watchManualLink').addEventListener('click', function () {
     showSection('watch_sectionInput');
   });
+});
+
+// =========================================================
+// FedEx貨物フォーム入力 機能（v1.6.0で追加）
+// =========================================================
+//
+// FedExが通関時に送ってくるMicrosoft Forms形式「貨物の詳細な説明をご提供ください」への
+// 回答案を半自動で作成する機能。商品ページ（eBay/メルカリ等）をAIで読み取って回答一式
+// （品目名・用途・材質・製造者・HSコード候補等）を生成し、フォームの質問を読み取って
+// 対応表（マッピング）を作り、人が確認したうえで各入力欄へ書き込む。
+//
+// 【重要】送信の自動化は一切行わない。送信ボタン（submit等）を探す・操作するコードは
+// この機能のどこにも書かない（fedexWriteAnswersFuncのコメント参照）。
+//
+// 既存機能（HSコード分析・TSCA・Watch Worksheet）のコード・関数は一切変更していない。
+// showSection()のsections配列への'sectionFedex'追加のみ、Watch Worksheet統合時と同じ
+// 「新規定義せず配列に追加する」既存の統合パターンを踏襲している。
+
+state.fedex = {
+  awb: '',
+  items: [],              // [{name_en, use_en, materials_en, maker_name_en, maker_address_en, hts_candidate, is_textile, notes}]
+  editingIndex: null,     // 品目リストの何番目を編集中か（nullなら新規追加モード）
+  makerAddressSource: '', // 現在の入力欄の製造者住所の由来: 'dict'(辞書/カスタム保存から自動補完) / 'manual'(人が手入力・確定) / ''(未確定)
+                          // 'manual'のときだけ、品目リストへの追加時にカスタムメーカー辞書へ自動保存する
+                          // （辞書ヒット済み・AI候補をそのまま確認しただけの場合は重複保存しない）。
+  aiAddressCandidate: null, // 「AIに住所候補を聞く」の直近の結果（未検証の候補。確認チェックを入れるまで採用しない）
+  makersData: null,       // data/manufacturers.json の内容（遅延ロード）
+  formQuestions: null,    // フォーム読み取り結果 [{title, type, options}]
+  mapping: null,          // 対応表 [{title, type, options, fieldKey, value, matched}]
+  writeResults: null,     // 書き込み結果 [{title, success, value, reason}]
+  completed: false        // フォーム書き込み結果を表示済みフラグ。trueのまま「ホームへ」を押すとフォームを完全クリアする
+                          // （TSCA機能のstate.tsca.completedと同じ扱い）。
+};
+
+// ---------------------------------------------------------
+// 共通ユーティリティ
+// ---------------------------------------------------------
+
+/** 全角スペース・連続空白を正規化して除去した文字列を返す。 */
+function fedexNormalizeValue(s) {
+  return String(s == null ? '' : s).replace(/[　]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** 複数品目の値を様式の書式に整形する共通関数。全画面（品目リスト・対応表）から使い回す。
+ *  品目が1件ならその値をそのまま、複数なら「1.値;2.値;3.値」形式（番号+ピリオド、
+ *  セミコロンの前後にスペースなし）で返す。空の値は除外しない（品目の並び順を保つため）。 */
+function fedexFormatMultiValue(values) {
+  var cleaned = (values || []).map(fedexNormalizeValue);
+  if (cleaned.length === 0) return '';
+  if (cleaned.length === 1) return cleaned[0];
+  return cleaned.map(function(v, i) { return (i + 1) + '.' + v; }).join(';');
+}
+
+function showFedexSub(id) {
+  ['fedexSubItems', 'fedexSubMapping', 'fedexSubResult'].forEach(function(sid) {
+    var el = document.getElementById(sid);
+    if (el) el.style.display = (sid === id) ? '' : 'none';
+  });
+}
+
+function showFedexAiBadge(show, notes) {
+  var el = document.getElementById('fedexAiResultBadge');
+  if (!el) return;
+  if (show) {
+    el.innerHTML = '✨ <strong>AI入力補助</strong> — 内容を確認・修正してから品目リストに追加してください' +
+      (notes ? '<div class="ai-reason">💡 ' + escapeHtml(notes) + '</div>' : '');
+  }
+  el.style.display = show ? '' : 'none';
+}
+
+// ---------------------------------------------------------
+// OpenAI呼び出し（既存のcallOpenAI/tscaCallAiJsonと同じエンドポイント・モデル・
+// 認証・エラーハンドリングを踏襲した汎用JSON応答パーサ版。既存ヘルパーは
+// title/description等の固定フィールド専用のため変更せず、同じ呼び出しパターンで
+// 汎用JSONを返す版をこの機能用に用意している）
+// ---------------------------------------------------------
+function fedexOpenAiJsonCall(systemPrompt, userContent, cb) {
+  fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + state.openaiKey
+    },
+    body: JSON.stringify({
+      model: 'gpt-5.4',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent }
+      ],
+      max_completion_tokens: 500
+    })
+  })
+  .then(function(r) {
+    if (!r.ok) {
+      return r.json().then(function(errBody) {
+        throw new Error((errBody.error && errBody.error.message) || ('HTTP ' + r.status));
+      });
+    }
+    return r.json();
+  })
+  .then(function(data) {
+    var content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!content) throw new Error('AIからの応答が空でした');
+    var s = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+    var start = s.indexOf('{');
+    var end = s.lastIndexOf('}');
+    if (start === -1 || end <= start) throw new Error('AIの応答にJSONが含まれていませんでした');
+    var obj;
+    try {
+      obj = JSON.parse(s.slice(start, end + 1));
+    } catch (e) {
+      throw new Error('JSONの解析に失敗しました: ' + e.message);
+    }
+    cb(null, obj);
+  })
+  .catch(function(e) {
+    cb(e, null);
+  });
+}
+
+/** 開いているページ／URLから取得したpageInfoをAIに渡し、品目データ一式のJSONを生成する。
+ *  材質のルールはTSCA機能のtscaAiSystemPrompt()の材質ルールと必ず整合させている:
+ *  ページに記載があればその値をそのまま使い、なければ"approx."付きの概算にする。 */
+function fedexCallAiJson(pageInfo, cb) {
+  var lines = [
+    'Product URL: ' + (pageInfo.url || ''),
+    'Product name: ' + (pageInfo.productName || '')
+  ];
+  if (pageInfo.brand)       lines.push('Brand: ' + pageInfo.brand);
+  if (pageInfo.condition)   lines.push('Condition: ' + pageInfo.condition);
+  if (pageInfo.category)    lines.push('Category on site: ' + pageInfo.category);
+  if (pageInfo.description) lines.push('Description: ' + pageInfo.description);
+  var userContent = lines.join('\n');
+
+  var systemPrompt = [
+    'You are helping prepare a US customs declaration (FedEx shipment) for a product exported from Japan to the US.',
+    'Given the product page information below, return ONLY a JSON object with exactly these fields.',
+    'ALL values must use half-width (ASCII) English letters, numbers, and punctuation only. No Japanese characters.',
+    '  "name_en": a concise English product name (a few words, no marketing language)',
+    '  "use_en": the product\'s intended use in English, e.g. "for retail sale". For collector items/hobby goods use something like "for collection/display" when that fits the context better than "for retail sale".',
+    '  "materials_en": material composition in English.',
+    '    - If the source information states materials (素材, 材質, "Material", etc.), use them, translated into standard English material names. This takes priority.',
+    '    - Otherwise use the industry-standard composition for this type of product (e.g. painted finished figures = PVC approx. 90% / ABS approx. 10%; trading cards = paper and cardboard; plush toys = polyester fabric and stuffing), with each material given an approximate percentage prefixed with "approx.", adding up to roughly 100%.',
+    '    - Write a percentage WITHOUT "approx." only when that exact figure is explicitly stated in the source information.',
+    '    - List at most 4 materials, comma-separated (e.g. "Cotton 100%" or "PVC approx. 90%, ABS approx. 10%").',
+    '  "maker_name_en": the manufacturer/maker company name in English if it can be determined from the source information, otherwise "" (empty string). Do not guess a maker that is not supported by the source information.',
+    '  "is_textile": exactly "yes" or "no" — whether the product itself is a textile product (clothing, fabric goods, bags made mainly of fabric, etc.). Figures, toys, electronics, ceramics, etc. are "no" even if they include small fabric parts.',
+    '  "hts_candidate": a CANDIDATE destination-country HTS/HS classification code, digits and dots only (e.g. "9503.00.00.90"), or "" if you cannot estimate one. This is only a candidate for the user to verify, never a final answer.',
+    '  "notes": one short sentence in Japanese noting any caveat about the classification or missing information, or "" if none.',
+    'Return ONLY the JSON object. No markdown, no code fences, no explanation outside the JSON.'
+  ].join('\n');
+
+  fedexOpenAiJsonCall(systemPrompt, userContent, cb);
+}
+
+// ---------------------------------------------------------
+// (a) 開いているページをAIで読み取り — 既存のgetPageInfo()をそのまま使用する
+// ---------------------------------------------------------
+function fedexRunAiFromActivePage() {
+  var btn = document.getElementById('fedexAddFromPageBtn');
+  var msgEl = document.getElementById('fedexAiMsg');
+  if (!state.openaiKey) {
+    showMessage(msgEl, 'error', 'APIキーが未設定です。設定画面で OpenAI APIキーを入力してください。');
+    return;
+  }
+  btn.disabled = true;
+  showMessage(msgEl, 'info', '分析中…');
+
+  getPageInfo(function(pageInfo, errReason) {
+    if (!pageInfo) {
+      btn.disabled = false;
+      showMessage(msgEl, 'error', (errReason || 'ページ情報を取得できませんでした') + '。商品ページを開いてから試してください。手入力で品目を追加することもできます。');
+      return;
+    }
+    fedexCallAiJson(pageInfo, function(err, aiData) {
+      btn.disabled = false;
+      if (err || !aiData) {
+        showMessage(msgEl, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '不明なエラー') + '。手入力で品目を追加してください。');
+        return;
+      }
+      msgEl.style.display = 'none';
+      fedexFillDraftFromAi(aiData);
+    });
+  });
+}
+
+// ---------------------------------------------------------
+// (b) URLから読み取り（メルカリ等） — 裏タブを開いて取得する
+// ---------------------------------------------------------
+
+/** getPageInfo()の内側の抽出関数と全く同じ内容の独立関数。
+ *  (b)は対象タブがアクティブタブではない（裏タブ）ため、getPageInfo()自体は使えない。
+ *  chrome.scripting.executeScriptのfuncはクロージャを持ち越せない（実行先で完全に
+ *  独立した関数として評価される）ため、getPageInfo()を変更せずに済むよう、
+ *  同じ抽出ロジックをこの独立関数として複製している。
+ *  【保守メモ】getPageInfo()内の抽出ロジックを変更した場合はこちらも合わせて更新すること。
+ *  なお、eBayは呼び出し元（getFedexPageInfoFromUrl）のホスト名チェックで事前に拒否される
+ *  （アカウント保護のため自動アクセス禁止）ので、ここにeBay用の分岐は不要。 */
+function fedexPageExtractFunc() {
+  var url = location.href;
+  var host = location.hostname;
+
+  function getText(selectors) {
+    for (var i = 0; i < selectors.length; i++) {
+      var el = document.querySelector(selectors[i]);
+      if (el && el.textContent.trim()) return el.textContent.trim().substring(0, 400);
+    }
+    return '';
+  }
+  function getMeta(names) {
+    for (var i = 0; i < names.length; i++) {
+      var el = document.querySelector('meta[property="' + names[i] + '"],meta[name="' + names[i] + '"]');
+      if (el && el.getAttribute('content')) return el.getAttribute('content');
+    }
+    return '';
+  }
+
+  var jsonldProduct = null;
+  var scripts = document.querySelectorAll('script[type="application/ld+json"]');
+  for (var si = 0; si < scripts.length; si++) {
+    try {
+      var d = JSON.parse(scripts[si].textContent);
+      var items = d['@graph'] ? d['@graph'] : (Array.isArray(d) ? d : [d]);
+      for (var ii = 0; ii < items.length; ii++) {
+        if (items[ii]['@type'] === 'Product') { jsonldProduct = items[ii]; break; }
+      }
+      if (jsonldProduct) break;
+    } catch (e) {}
+  }
+
+  var productName = '';
+  var brand = '';
+  var condition = '';
+  var description = '';
+  var category = '';
+
+  if (host.includes('mercari.com')) {
+    productName = getText(['h1[class*="name"]', 'h1[data-testid="name"]', 'h1', 'p[data-testid="product-name"]']);
+    description = getText(['[data-testid="description"]', 'p[class*="description"]', '[class*="ItemDescription"]']).substring(0, 300);
+    condition   = getText(['[data-testid="condition"]', '[class*="condition"]', 'span[class*="status"]']);
+    category    = getText(['[data-testid="breadcrumb"]', 'nav[aria-label="breadcrumb"]', '.breadcrumb']).substring(0, 100);
+    brand       = getText(['[data-testid="brand"]', '[class*="brand"]']);
+  }
+  else if (host.includes('auctions.yahoo.co.jp') || host.includes('buyee.jp')) {
+    productName = getText(['h1[class*="Product__title"]', '.Product__title', 'h1']);
+    description = getText(['.ProductExplanation__itemDescription', '.ProductDetail__description', '[class*="description"]']).substring(0, 300);
+    condition   = getText(['.ProductDetail__condition', '[class*="condition"]']);
+  }
+  else if (host.includes('hardoff.co.jp') || host.includes('bookoff.co.jp')) {
+    productName = getText(['h1', '.item-name', '.product-name']);
+    description = getText(['.item-detail', '.product-detail', '.description']).substring(0, 300);
+  }
+
+  if (jsonldProduct) {
+    if (!productName) productName = jsonldProduct.name || '';
+    if (!brand && jsonldProduct.brand) brand = typeof jsonldProduct.brand === 'string' ? jsonldProduct.brand : (jsonldProduct.brand.name || '');
+    if (!description && jsonldProduct.description) description = String(jsonldProduct.description).substring(0, 300);
+    if (!condition && jsonldProduct.itemCondition) condition = String(jsonldProduct.itemCondition).replace(/https?:\/\/schema\.org\//, '').replace('Condition', '');
+  }
+
+  if (!productName) productName = getText(['h1']) || getMeta(['og:title']) || document.title;
+  if (!description) description = getMeta(['og:description', 'description']).substring(0, 300);
+
+  return {
+    url: url,
+    host: host,
+    productName: productName,
+    brand: brand,
+    condition: condition,
+    description: description,
+    category: category
+  };
+}
+
+/** URLを裏タブ（非アクティブ）で開き、読み込み完了 + 1.5秒待機してから
+ *  fedexPageExtractFuncを実行して商品情報を取得し、タブを閉じる。
+ *  eBayの商品ページ（hostnameに"ebay."を含む）は自動アクセス禁止のため拒否する
+ *  （アカウント保護のための絶対要件。ここは緩めない）。 */
+function getFedexPageInfoFromUrl(url, cb) {
+  var hostname;
+  try {
+    hostname = new URL(url).hostname;
+  } catch (e) {
+    cb(null, 'URLの形式が正しくありません');
+    return;
+  }
+  if (hostname.indexOf('ebay.') !== -1) {
+    cb(null, 'eBayの商品ページはタブで開いて「開いているページをAIで読み取り」をご利用ください');
+    return;
+  }
+
+  chrome.tabs.create({ active: false, url: url }, function(tab) {
+    if (chrome.runtime.lastError || !tab) {
+      cb(null, (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'タブを開けませんでした');
+      return;
+    }
+    var tabId = tab.id;
+    var done = false;
+
+    function finish(result, err) {
+      if (done) return;
+      done = true;
+      chrome.tabs.onUpdated.removeListener(listener);
+      clearTimeout(timeoutId);
+      chrome.tabs.remove(tabId, function() { /* 閉じられなくても致命的ではないため無視 */ });
+      cb(result, err);
+    }
+
+    var timeoutId = setTimeout(function() {
+      finish(null, 'ページの読み込みがタイムアウトしました');
+    }, 20000);
+
+    function listener(updatedTabId, changeInfo) {
+      if (updatedTabId !== tabId || changeInfo.status !== 'complete') return;
+      // 読み込み完了後、さらに1.5秒待機してから抽出する（JS描画待ち）
+      setTimeout(function() {
+        chrome.tabs.get(tabId, function(currentTab) {
+          if (chrome.runtime.lastError || !currentTab) { finish(null, (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'タブの情報を取得できませんでした'); return; }
+          var currentHostname;
+          try { currentHostname = new URL(currentTab.url).hostname; } catch (e) { currentHostname = ''; }
+          if (currentHostname.indexOf('ebay.') !== -1) {
+            finish(null, 'リダイレクト先がeBayのため読み取りを中止しました。eBayの商品ページはタブで開いて「開いているページをAIで読み取り」をご利用ください');
+            return;
+          }
+          chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            func: fedexPageExtractFunc
+          }, function(results) {
+            if (chrome.runtime.lastError) { finish(null, chrome.runtime.lastError.message); return; }
+            if (results && results[0] && results[0].result) {
+              finish(results[0].result, null);
+            } else {
+              finish(null, 'ページ情報を取得できませんでした');
+            }
+          });
+        });
+      }, 1500);
+    }
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+function fedexRunAiFromUrl() {
+  var btn = document.getElementById('fedexAddFromUrlBtn');
+  var urlEl = document.getElementById('fedexUrlInput');
+  var msgEl = document.getElementById('fedexAiMsg');
+  var url = fedexNormalizeValue(urlEl.value);
+
+  if (!state.openaiKey) {
+    showMessage(msgEl, 'error', 'APIキーが未設定です。設定画面で OpenAI APIキーを入力してください。');
+    return;
+  }
+  if (!url) {
+    showMessage(msgEl, 'error', 'URLを入力してください。');
+    return;
+  }
+
+  btn.disabled = true;
+  showMessage(msgEl, 'info', 'ページを読み込み中…');
+
+  getFedexPageInfoFromUrl(url, function(pageInfo, errReason) {
+    if (!pageInfo) {
+      btn.disabled = false;
+      showMessage(msgEl, 'error', errReason || 'ページ情報を取得できませんでした');
+      return;
+    }
+    showMessage(msgEl, 'info', '分析中…');
+    fedexCallAiJson(pageInfo, function(err, aiData) {
+      btn.disabled = false;
+      if (err || !aiData) {
+        showMessage(msgEl, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '不明なエラー') + '。手入力で品目を追加してください。');
+        return;
+      }
+      msgEl.style.display = 'none';
+      fedexFillDraftFromAi(aiData);
+    });
+  });
+}
+
+/** AI応答を品目編集欄（下書き）に流し込む。まだ品目リストへは追加しない
+ *  （TSCA機能と同様、必ず人が確認・修正してから「＋ 品目リストに追加」で確定する）。 */
+function fedexFillDraftFromAi(aiData) {
+  document.getElementById('fedexItemName').value = aiData.name_en || '';
+  document.getElementById('fedexItemUse').value = aiData.use_en || '';
+  document.getElementById('fedexItemMaterials').value = aiData.materials_en || '';
+  document.getElementById('fedexItemMakerName').value = aiData.maker_name_en || '';
+  document.getElementById('fedexItemMakerAddress').value = '';
+  document.getElementById('fedexItemHts').value = aiData.hts_candidate || '';
+  document.getElementById('fedexItemTextile').value = (aiData.is_textile === 'yes') ? 'yes' : 'no';
+  state.fedex.makerAddressSource = '';
+  document.getElementById('fedexMakerSourceNote').style.display = 'none';
+  document.getElementById('fedexAiAddressCandidate').style.display = 'none';
+  showFedexAiBadge(true, aiData.notes);
+
+  if (aiData.maker_name_en) {
+    fedexLookupMaker(aiData.maker_name_en, function(found) { fedexApplyMakerLookupResult(found); });
+  } else {
+    document.getElementById('fedexMakerLookupMsg').style.display = 'none';
+  }
+}
+
+// ---------------------------------------------------------
+// メーカー住所の自動補完（辞書 data/manufacturers.json + カスタム保存）
+// ---------------------------------------------------------
+function fedexEnsureMakersData(cb) {
+  if (state.fedex.makersData) { cb(); return; }
+  fetch(chrome.runtime.getURL('data/manufacturers.json'))
+    .then(function(r) { return r.json(); })
+    .then(function(d) { state.fedex.makersData = d; cb(); })
+    .catch(function(e) {
+      console.error('manufacturers.json load error', e);
+      state.fedex.makersData = { makers: [] };
+      cb();
+    });
+}
+
+/** メーカー名文字列を、data/manufacturers.json と chrome.storage.local保存のカスタム
+ *  メーカー一覧の両方に対して、namesリストとの部分一致（どちらかがどちらかを含む）で照合する。
+ *  見つかった場合は該当エントリを、見つからない場合は null を cb に渡す。 */
+function fedexLookupMaker(nameStr, cb) {
+  var q = fedexNormalizeValue(nameStr).toLowerCase();
+  if (!q || q.length < 2) { cb(null); return; }
+  fedexEnsureMakersData(function() {
+    chrome.storage.local.get(['_hsFedexCustomMakers'], function(stored) {
+      var custom = [];
+      try { custom = JSON.parse(stored._hsFedexCustomMakers || '[]'); } catch (e) { custom = []; }
+      var all = (state.fedex.makersData.makers || []).concat(custom);
+      var found = null;
+      for (var i = 0; i < all.length && !found; i++) {
+        var names = all[i].names || [];
+        for (var j = 0; j < names.length; j++) {
+          var n = fedexNormalizeValue(names[j]).toLowerCase();
+          if (!n) continue;
+          if (q.indexOf(n) !== -1 || n.indexOf(q) !== -1) { found = all[i]; break; }
+        }
+      }
+      cb(found);
+    });
+  });
+}
+
+function fedexApplyMakerLookupResult(found) {
+  var msgEl = document.getElementById('fedexMakerLookupMsg');
+  var noteEl = document.getElementById('fedexMakerSourceNote');
+  if (found) {
+    document.getElementById('fedexItemMakerAddress').value = found.address_en || '';
+    state.fedex.makerAddressSource = 'dict';
+    msgEl.style.display = 'none';
+    var noteParts = [];
+    if (found.note) noteParts.push(found.note);
+    if (found.source) noteParts.push('出典: ' + found.source);
+    if (noteParts.length) {
+      noteEl.textContent = noteParts.join(' / ');
+      noteEl.style.display = '';
+    } else {
+      noteEl.style.display = 'none';
+    }
+  } else {
+    state.fedex.makerAddressSource = '';
+    noteEl.style.display = 'none';
+    showMessage(msgEl, 'warn', '辞書に一致するメーカーが見つかりません。住所を入力するか「AIに住所候補を聞く」を押してください。');
+  }
+}
+
+/** 辞書にないメーカーの住所を人が手入力で確定させた場合、次回から同様に部分一致で
+ *  補完できるよう chrome.storage.local にカスタムメーカーとして自動保存する。
+ *  同名（namesとの一致）の既存カスタムエントリがあれば上書き更新する。 */
+function fedexSaveCustomMaker(nameEn, addressEn) {
+  chrome.storage.local.get(['_hsFedexCustomMakers'], function(stored) {
+    var custom = [];
+    try { custom = JSON.parse(stored._hsFedexCustomMakers || '[]'); } catch (e) { custom = []; }
+    var normName = fedexNormalizeValue(nameEn);
+    var normNameLower = normName.toLowerCase();
+    var idx = -1;
+    for (var i = 0; i < custom.length; i++) {
+      var names = custom[i].names || [];
+      for (var j = 0; j < names.length; j++) {
+        if (fedexNormalizeValue(names[j]).toLowerCase() === normNameLower) { idx = i; break; }
+      }
+      if (idx !== -1) break;
+    }
+    var entry = {
+      id: (idx !== -1 && custom[idx].id) ? custom[idx].id : ('custom_' + Date.now() + '_' + Math.floor(Math.random() * 1000)),
+      names: [normName],
+      name_en: normName,
+      address_en: fedexNormalizeValue(addressEn),
+      source: '',
+      verified: '',
+      note: 'ユーザー入力'
+    };
+    if (idx !== -1) custom[idx] = entry; else custom.push(entry);
+    chrome.storage.local.set({ _hsFedexCustomMakers: JSON.stringify(custom) });
+  });
+}
+
+/** 「AIに住所候補を聞く」。結果は必ず「未検証の候補」ラベル付きで表示し、
+ *  確認チェックボックス（fedexAiAddressConfirm）にチェックを入れるまで
+ *  品目データ（住所欄）へは反映しない。 */
+function fedexAskAiForAddress() {
+  var btn = document.getElementById('fedexAskAiAddressBtn');
+  var msgEl = document.getElementById('fedexMakerLookupMsg');
+  var makerName = fedexNormalizeValue(document.getElementById('fedexItemMakerName').value);
+
+  if (!state.openaiKey) {
+    showMessage(msgEl, 'error', 'APIキーが未設定です。設定画面で OpenAI APIキーを入力してください。');
+    return;
+  }
+  if (!makerName) {
+    showMessage(msgEl, 'error', '先に製造者の会社名（英語）を入力してください。');
+    return;
+  }
+
+  btn.disabled = true;
+  showMessage(msgEl, 'info', 'AIに住所候補を問い合わせ中…');
+
+  var systemPrompt = [
+    'You are helping find the likely business address of a Japanese (or other) manufacturer for a US customs declaration.',
+    'Given a manufacturer/company name, return ONLY a JSON object with exactly these fields:',
+    '  "address_en": your best-guess candidate address in English, half-width characters, in the format appropriate for a customs form (street, city/ward, prefecture/state, postal code, country). If you cannot determine a plausible address, return "".',
+    '  "note": one short sentence in Japanese noting your confidence level or any caveat, or "" if none.',
+    'This is only a CANDIDATE for a human to verify against the official company website before use — do not present it as confirmed fact.',
+    'Return ONLY the JSON object, no markdown, no explanation.'
+  ].join('\n');
+  var userContent = 'Manufacturer name: ' + makerName;
+
+  fedexOpenAiJsonCall(systemPrompt, userContent, function(err, obj) {
+    btn.disabled = false;
+    if (err || !obj || !fedexNormalizeValue(obj.address_en)) {
+      showMessage(msgEl, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '住所候補を取得できませんでした') + '。手入力してください。');
+      return;
+    }
+    msgEl.style.display = 'none';
+    state.fedex.aiAddressCandidate = fedexNormalizeValue(obj.address_en);
+    document.getElementById('fedexAiAddressCandidateText').textContent =
+      state.fedex.aiAddressCandidate + (obj.note ? '（' + obj.note + '）' : '');
+    document.getElementById('fedexAiAddressConfirm').checked = false;
+    document.getElementById('fedexAiAddressCandidate').style.display = '';
+  });
+}
+
+// ---------------------------------------------------------
+// 品目リスト（追加・編集・削除） — TSCA機能の商品リストUIパターン（tscaCommitDraft等）を踏襲
+// ---------------------------------------------------------
+function fedexEffectiveItem(raw) {
+  return {
+    name_en:          fedexNormalizeValue(raw && raw.name_en),
+    use_en:           fedexNormalizeValue(raw && raw.use_en),
+    materials_en:     fedexNormalizeValue(raw && raw.materials_en),
+    maker_name_en:    fedexNormalizeValue(raw && raw.maker_name_en),
+    maker_address_en: fedexNormalizeValue(raw && raw.maker_address_en),
+    hts_candidate:    fedexNormalizeValue(raw && raw.hts_candidate),
+    is_textile:       (raw && raw.is_textile === 'yes') ? 'yes' : 'no',
+    notes:            fedexNormalizeValue(raw && raw.notes)
+  };
+}
+
+function fedexReadDraftItem() {
+  return {
+    name_en: document.getElementById('fedexItemName').value,
+    use_en: document.getElementById('fedexItemUse').value,
+    materials_en: document.getElementById('fedexItemMaterials').value,
+    maker_name_en: document.getElementById('fedexItemMakerName').value,
+    maker_address_en: document.getElementById('fedexItemMakerAddress').value,
+    hts_candidate: document.getElementById('fedexItemHts').value,
+    is_textile: document.getElementById('fedexItemTextile').value
+  };
+}
+
+function fedexClearDraftItemFields() {
+  ['fedexItemName', 'fedexItemUse', 'fedexItemMaterials', 'fedexItemMakerName', 'fedexItemMakerAddress', 'fedexItemHts'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  var textileEl = document.getElementById('fedexItemTextile');
+  if (textileEl) textileEl.value = 'no';
+  document.getElementById('fedexMakerSourceNote').style.display = 'none';
+  document.getElementById('fedexMakerLookupMsg').style.display = 'none';
+  document.getElementById('fedexAiAddressCandidate').style.display = 'none';
+  state.fedex.makerAddressSource = '';
+  state.fedex.aiAddressCandidate = null;
+  showFedexAiBadge(false);
+}
+
+function fedexUpdateAddItemBtnLabel() {
+  var btn = document.getElementById('fedexAddItemBtn');
+  var cancelBtn = document.getElementById('fedexCancelEditItemBtn');
+  var editing = (state.fedex.editingIndex != null);
+  if (btn) btn.textContent = editing ? '更新してリストへ反映' : '＋ 品目リストに追加';
+  if (cancelBtn) cancelBtn.style.display = editing ? '' : 'none';
+}
+
+function fedexRenderItemList() {
+  var listEl = document.getElementById('fedexItemList');
+  if (!listEl) return;
+  var items = state.fedex.items;
+  listEl.innerHTML = '';
+  if (items.length === 0) { listEl.style.display = 'none'; return; }
+  listEl.style.display = '';
+
+  items.forEach(function(it, i) {
+    var row = document.createElement('div');
+    row.className = 'tsca-product-row';
+    if (state.fedex.editingIndex === i) row.className += ' tsca-product-row-editing';
+
+    var num = document.createElement('span');
+    num.className = 'tsca-product-num';
+    num.textContent = (i + 1) + '.';
+
+    var text = document.createElement('span');
+    text.className = 'tsca-product-text';
+    var preview = it.name_en + (it.maker_name_en ? ' — ' + it.maker_name_en : '');
+    if (preview.length > 70) preview = preview.substring(0, 70) + '…';
+    text.textContent = preview;
+
+    var editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'btn btn-ghost btn-xs';
+    editBtn.textContent = '編集';
+    editBtn.addEventListener('click', function() { fedexEditItem(i); });
+
+    var delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'btn btn-ghost btn-xs tsca-product-del';
+    delBtn.textContent = '削除';
+    delBtn.addEventListener('click', function() { fedexDeleteItem(i); });
+
+    row.appendChild(num);
+    row.appendChild(text);
+    row.appendChild(editBtn);
+    row.appendChild(delBtn);
+    listEl.appendChild(row);
+  });
+}
+
+/** 入力欄の内容を品目リストへ確定する。品目名が空の場合は何もせず false を返す。
+ *  辞書に一致しなかったメーカー住所を人が手入力で確定させた場合（makerAddressSource==='manual'）
+ *  はカスタムメーカー辞書へ自動保存する。 */
+function fedexCommitItemDraft() {
+  var raw = fedexReadDraftItem();
+  var item = fedexEffectiveItem(raw);
+  if (!item.name_en) return false;
+
+  if (state.fedex.makerAddressSource === 'manual' && item.maker_name_en && item.maker_address_en) {
+    fedexSaveCustomMaker(item.maker_name_en, item.maker_address_en);
+  }
+
+  var idx = state.fedex.editingIndex;
+  if (idx != null && idx >= 0 && idx < state.fedex.items.length) {
+    state.fedex.items[idx] = item;
+  } else {
+    state.fedex.items.push(item);
+  }
+  state.fedex.editingIndex = null;
+  fedexClearDraftItemFields();
+  fedexRenderItemList();
+  fedexUpdateAddItemBtnLabel();
+  return true;
+}
+
+function fedexEditItem(index) {
+  var it = state.fedex.items[index];
+  if (!it) return;
+  state.fedex.editingIndex = index;
+  document.getElementById('fedexItemName').value = it.name_en;
+  document.getElementById('fedexItemUse').value = it.use_en;
+  document.getElementById('fedexItemMaterials').value = it.materials_en;
+  document.getElementById('fedexItemMakerName').value = it.maker_name_en;
+  document.getElementById('fedexItemMakerAddress').value = it.maker_address_en;
+  document.getElementById('fedexItemHts').value = it.hts_candidate;
+  document.getElementById('fedexItemTextile').value = (it.is_textile === 'yes') ? 'yes' : 'no';
+  // 既にリストにある値をそのまま編集する扱いにし、無変更のまま更新した場合に
+  // カスタムメーカー辞書への重複保存が起きないようにする。
+  state.fedex.makerAddressSource = it.maker_address_en ? 'dict' : '';
+  document.getElementById('fedexMakerSourceNote').style.display = 'none';
+  document.getElementById('fedexMakerLookupMsg').style.display = 'none';
+  document.getElementById('fedexAiAddressCandidate').style.display = 'none';
+  showFedexAiBadge(false);
+  fedexRenderItemList();
+  fedexUpdateAddItemBtnLabel();
+}
+
+function fedexCancelEditItem() {
+  state.fedex.editingIndex = null;
+  fedexClearDraftItemFields();
+  fedexRenderItemList();
+  fedexUpdateAddItemBtnLabel();
+}
+
+function fedexDeleteItem(index) {
+  state.fedex.items.splice(index, 1);
+  if (state.fedex.editingIndex === index) {
+    state.fedex.editingIndex = null;
+    fedexClearDraftItemFields();
+  } else if (state.fedex.editingIndex != null && state.fedex.editingIndex > index) {
+    state.fedex.editingIndex--;
+  }
+  fedexRenderItemList();
+  fedexUpdateAddItemBtnLabel();
+}
+
+// ---------------------------------------------------------
+// フォームの質問を読み取る
+// ---------------------------------------------------------
+
+/** FedExフォーム（Microsoft Forms）のページから質問一覧を抽出する。chrome.scripting.executeScript
+ *  で対象タブに対して実行するため、クロージャを持たない独立関数として定義している。
+ *  まず[data-automation-id="questionItem"]を試し、0件ならフォールバックとして
+ *  見出し要素(h2/h3/[role="heading"])+aria属性ベースの探索を行う。
+ *  各質問について {index, title, type, options} を返す。
+ *  type判定: input[type=text]またはtextareaが存在すれば"text"、
+ *  role="radiogroup"またはinput[type=radio]が存在すれば"radio"（optionsにラベル文字列配列）。 */
+function fedexReadQuestionsFunc() {
+  function textOf(el) { return el ? el.textContent.replace(/\s+/g, ' ').trim() : ''; }
+
+  function detectTypeAndOptions(container) {
+    var type = null;
+    var options = [];
+    var radioEls = container.querySelectorAll('[role="radio"], input[type="radio"]');
+    if (radioEls.length) {
+      type = 'radio';
+      radioEls.forEach(function(r) {
+        var lbl = r.getAttribute('aria-label');
+        if (!lbl) {
+          var labelEl = r.closest('label');
+          if (labelEl) lbl = textOf(labelEl);
+        }
+        if (!lbl && r.parentElement) lbl = textOf(r.parentElement);
+        lbl = (lbl || '').trim();
+        if (lbl && options.indexOf(lbl) === -1) options.push(lbl);
+      });
+    } else {
+      var textInput = container.querySelector('input[type="text"], textarea');
+      if (textInput) type = 'text';
+    }
+    return { type: type, options: options };
+  }
+
+  var out = [];
+  var items = document.querySelectorAll('[data-automation-id="questionItem"]');
+
+  items.forEach(function(el) {
+    var headingEl = el.querySelector('[role="heading"], h2, h3') || el.querySelector('[aria-label]');
+    var title = textOf(headingEl) || textOf(el).slice(0, 150);
+    var ta = detectTypeAndOptions(el);
+    if (ta.type && title) out.push({ index: out.length, title: title, type: ta.type, options: ta.options });
+  });
+
+  if (out.length === 0) {
+    // フォールバック: 見出し要素 + aria属性ベースの探索
+    var heads = document.querySelectorAll('h2, h3, [role="heading"]');
+    heads.forEach(function(h) {
+      var title = textOf(h);
+      if (!title || title.length < 2) return;
+      var scope = h.closest('div') || h.parentElement;
+      if (!scope) return;
+      var ta = detectTypeAndOptions(scope);
+      if (ta.type) out.push({ index: out.length, title: title, type: ta.type, options: ta.options });
+    });
+  }
+
+  return out;
+}
+
+var FEDEX_FIELD_KEYWORDS = [
+  { key: 'awb',      patterns: ['運送状', 'awb', 'waybill'] },
+  { key: 'email',    patterns: ['メール', 'email', 'mail'] },
+  { key: 'textile',  patterns: ['繊維', 'textile'] },
+  { key: 'maker',    patterns: ['会社名', '製造者', 'メーカー', 'manufacturer', 'company'] },
+  { key: 'address',  patterns: ['住所', 'address'] },
+  { key: 'materials',patterns: ['材質', '素材', 'material'] },
+  { key: 'name',     patterns: ['製品名', '品名', 'product name'] },
+  { key: 'use',      patterns: ['用途', 'purpose'] },
+  { key: 'hts',      patterns: ['hsコード', 'htsコード', 'hs code', 'hts code', 'hs番号'] }
+];
+
+/** フォームの質問タイトルをキーワードマッチで回答種別に対応付ける。一致しなければ null。 */
+function fedexMatchFieldKey(title) {
+  var t = (title || '').toLowerCase();
+  for (var i = 0; i < FEDEX_FIELD_KEYWORDS.length; i++) {
+    var group = FEDEX_FIELD_KEYWORDS[i];
+    for (var j = 0; j < group.patterns.length; j++) {
+      if (t.indexOf(group.patterns[j].toLowerCase()) !== -1) return group.key;
+    }
+  }
+  return null;
+}
+
+function fedexComputeAnswerValue(fieldKey) {
+  var items = state.fedex.items;
+  switch (fieldKey) {
+    case 'awb':
+      return fedexNormalizeValue(document.getElementById('fedexAwb').value).replace(/[^0-9]/g, '');
+    case 'name':
+      return fedexFormatMultiValue(items.map(function(i) { return i.name_en; }));
+    case 'use':
+      return fedexFormatMultiValue(items.map(function(i) { return i.use_en; }));
+    case 'materials':
+      return fedexFormatMultiValue(items.map(function(i) { return i.materials_en; }));
+    case 'maker':
+      return fedexFormatMultiValue(items.map(function(i) { return i.maker_name_en; }));
+    case 'address':
+      return fedexFormatMultiValue(items.map(function(i) { return i.maker_address_en; }));
+    case 'hts':
+      return fedexFormatMultiValue(items.map(function(i) { return i.hts_candidate; }));
+    case 'email':
+      return fedexNormalizeValue(document.getElementById('fedexRecipientEmail').value) || '/';
+    case 'textile':
+      return items.some(function(i) { return i.is_textile === 'yes'; }) ? 'はい' : 'いいえ';
+    default:
+      return '';
+  }
+}
+
+/** ラジオの選択肢文字列配列の中から、計算済みの答え（'はい'/'いいえ'）に対応する
+ *  選択肢のラベル文字列を探す（"Yes"/"No" 表記にも対応）。見つからなければ空文字。 */
+function fedexPickRadioOption(options, computedValue) {
+  if (!options || !options.length) return '';
+  var wantYes = (computedValue === 'はい' || /^yes$/i.test(computedValue));
+  var wantNo  = (computedValue === 'いいえ' || /^no$/i.test(computedValue));
+  for (var i = 0; i < options.length; i++) {
+    var o = options[i];
+    var ol = o.toLowerCase();
+    if (wantYes && (ol.indexOf('yes') !== -1 || o.indexOf('はい') !== -1)) return o;
+    if (wantNo && (ol.indexOf('no') !== -1 || o.indexOf('いいえ') !== -1)) return o;
+  }
+  return '';
+}
+
+function fedexBuildMapping(questions) {
+  var mapping = questions.map(function(q) {
+    var fieldKey = fedexMatchFieldKey(q.title);
+    var value = '';
+    var matched = false;
+    if (fieldKey) {
+      var computed = fedexComputeAnswerValue(fieldKey);
+      if (q.type === 'radio') {
+        value = fedexPickRadioOption(q.options, computed);
+        matched = !!value;
+      } else {
+        value = computed;
+        matched = !!value;
+      }
+    }
+    return { title: q.title, type: q.type, options: q.options || [], fieldKey: fieldKey, value: value, matched: matched };
+  });
+  state.fedex.mapping = mapping;
+  fedexRenderMappingTable();
+}
+
+function fedexRenderMappingTable() {
+  var tableEl = document.getElementById('fedexMappingTable');
+  tableEl.innerHTML = '';
+
+  state.fedex.mapping.forEach(function(row, idx) {
+    var tr = document.createElement('tr');
+    var tdL = document.createElement('td');
+    tdL.className = 'tsca-confirm-label';
+    tdL.textContent = row.title;
+
+    var tdV = document.createElement('td');
+    tdV.className = 'tsca-confirm-value';
+
+    if (!row.matched) {
+      var note = document.createElement('div');
+      note.className = 'fedex-mapping-nodata';
+      note.textContent = '手持ちデータがありません。手入力してください。';
+      tdV.appendChild(note);
+    }
+
+    if (row.type === 'radio') {
+      var sel = document.createElement('select');
+      sel.className = 'fedex-mapping-input';
+      var emptyOpt = document.createElement('option');
+      emptyOpt.value = '';
+      emptyOpt.textContent = '-- 選択してください --';
+      sel.appendChild(emptyOpt);
+      row.options.forEach(function(o) {
+        var opt = document.createElement('option');
+        opt.value = o;
+        opt.textContent = o;
+        if (o === row.value) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener('change', function() { state.fedex.mapping[idx].value = this.value; });
+      tdV.appendChild(sel);
+    } else {
+      var ta = document.createElement('textarea');
+      ta.className = 'fedex-mapping-input';
+      ta.rows = 2;
+      ta.value = row.value;
+      ta.addEventListener('input', function() { state.fedex.mapping[idx].value = this.value; });
+      tdV.appendChild(ta);
+    }
+
+    tr.appendChild(tdL);
+    tr.appendChild(tdV);
+    tableEl.appendChild(tr);
+  });
+
+  var checkEl = document.getElementById('fedexMappingConfirmCheck');
+  checkEl.checked = false;
+  document.getElementById('fedexWriteBtn').disabled = true;
+}
+
+function fedexReadFormQuestions() {
+  var msgEl = document.getElementById('fedexMappingMsg');
+  document.getElementById('fedexMappingTable').innerHTML = '';
+  showMessage(msgEl, 'info', 'フォームの質問を読み取り中…');
+
+  function resetMappingConfirmGate() {
+    document.getElementById('fedexMappingConfirmCheck').checked = false;
+    document.getElementById('fedexWriteBtn').disabled = true;
+    state.fedex.formQuestions = null;
+    state.fedex.mapping = null;
+  }
+
+  chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+    if (!tabs || !tabs[0]) { showMessage(msgEl, 'error', 'タブが見つかりません。'); resetMappingConfirmGate(); return; }
+    var tab = tabs[0];
+    var hostname = '';
+    try { hostname = new URL(tab.url).hostname; } catch (e) {}
+    if (hostname !== 'forms.cloud.microsoft' && hostname !== 'forms.office.com') {
+      showMessage(msgEl, 'error', 'FedExのフォームページを開いた状態でお試しください。');
+      resetMappingConfirmGate();
+      return;
+    }
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: fedexReadQuestionsFunc
+    }, function(results) {
+      if (chrome.runtime.lastError) { showMessage(msgEl, 'error', chrome.runtime.lastError.message); resetMappingConfirmGate(); return; }
+      var questions = (results && results[0] && results[0].result) || [];
+      if (!questions.length) {
+        showMessage(msgEl, 'error', 'フォームを読み取れませんでした。ページを開いた状態でもう一度お試しください。');
+        resetMappingConfirmGate();
+        return;
+      }
+      msgEl.style.display = 'none';
+      state.fedex.formQuestions = questions;
+      fedexBuildMapping(questions);
+    });
+  });
+}
+
+// ---------------------------------------------------------
+// フォームへの書き込み
+// ---------------------------------------------------------
+
+/** 対応表の内容をFedExフォーム（Microsoft Forms）のページへ書き込む。chrome.scripting.executeScript
+ *  で対象タブに対して実行するため、クロージャを持たない独立関数として定義している。
+ *  fedexReadQuestionsFuncと同じ検出ロジックで質問タイトルから要素を再特定してから値を書き込む。
+ *
+ *  【重要】送信ボタン（submit等）には一切触れない。送信ボタンを探すコード・セレクタは
+ *  この関数を含め、この機能のどこにも実装していない（下部のコメント参照）。 */
+function fedexWriteAnswersFunc(payload) {
+  function textOf(el) { return el ? el.textContent.replace(/\s+/g, ' ').trim() : ''; }
+
+  function detectTypeAndOptions(container) {
+    var type = null;
+    var options = [];
+    var radioEls = container.querySelectorAll('[role="radio"], input[type="radio"]');
+    if (radioEls.length) {
+      type = 'radio';
+      radioEls.forEach(function(r) {
+        var lbl = r.getAttribute('aria-label');
+        if (!lbl) {
+          var labelEl = r.closest('label');
+          if (labelEl) lbl = textOf(labelEl);
+        }
+        if (!lbl && r.parentElement) lbl = textOf(r.parentElement);
+        lbl = (lbl || '').trim();
+        if (lbl) options.push({ label: lbl, el: r });
+      });
+    } else {
+      var textInput = container.querySelector('input[type="text"], textarea');
+      if (textInput) type = 'text';
+    }
+    return { type: type, options: options, textInput: container.querySelector('input[type="text"], textarea') };
+  }
+
+  function collectContainers() {
+    var list = [];
+    var items = document.querySelectorAll('[data-automation-id="questionItem"]');
+    items.forEach(function(el) {
+      var headingEl = el.querySelector('[role="heading"], h2, h3') || el.querySelector('[aria-label]');
+      var title = textOf(headingEl) || textOf(el).slice(0, 150);
+      var ta = detectTypeAndOptions(el);
+      if (ta.type && title) list.push({ title: title, ta: ta });
+    });
+    if (list.length === 0) {
+      var heads = document.querySelectorAll('h2, h3, [role="heading"]');
+      heads.forEach(function(h) {
+        var title = textOf(h);
+        if (!title || title.length < 2) return;
+        var scope = h.closest('div') || h.parentElement;
+        if (!scope) return;
+        var ta = detectTypeAndOptions(scope);
+        if (ta.type) list.push({ title: title, ta: ta });
+      });
+    }
+    return list;
+  }
+
+  function setNativeValue(el, value) {
+    var proto = (el.tagName === 'TEXTAREA') ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+    var setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+    setter.call(el, value);
+    el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  var containers = collectContainers();
+  var results = [];
+
+  payload.forEach(function(row) {
+    var match = null;
+    for (var i = 0; i < containers.length; i++) {
+      if (containers[i].title === row.title) { match = containers[i]; break; }
+    }
+    if (!match) {
+      results.push({ title: row.title, success: false, value: row.value, reason: 'フォーム上に該当する質問が見つかりませんでした（ページの表示が変わった可能性があります）。' });
+      return;
+    }
+    if (!row.value) {
+      results.push({ title: row.title, success: false, value: row.value, reason: '値が空のため書き込みをスキップしました。' });
+      return;
+    }
+    try {
+      if (row.type === 'radio') {
+        var target = null;
+        for (var j = 0; j < match.ta.options.length; j++) {
+          if (match.ta.options[j].label === row.value) { target = match.ta.options[j].el; break; }
+        }
+        if (!target) {
+          results.push({ title: row.title, success: false, value: row.value, reason: '選択肢の中に一致する項目が見つかりませんでした。' });
+          return;
+        }
+        target.click();
+        results.push({ title: row.title, success: true, value: row.value });
+      } else {
+        var input = match.ta.textInput;
+        if (!input) {
+          results.push({ title: row.title, success: false, value: row.value, reason: '入力欄が見つかりませんでした。' });
+          return;
+        }
+        input.focus();
+        setNativeValue(input, row.value);
+        input.blur();
+        results.push({ title: row.title, success: true, value: row.value });
+      }
+    } catch (e) {
+      results.push({ title: row.title, success: false, value: row.value, reason: '書き込み中にエラーが発生しました: ' + (e && e.message ? e.message : String(e)) });
+    }
+  });
+
+  return results;
+  // ↑ ここまでの処理に、送信ボタン（submit / 送信 等）を探す・クリックするコードは
+  // 一切含まれていない。このファイル全体でも同様（フォーム送信の自動化は行わない）。
+}
+
+function fedexWriteToForm() {
+  var msgEl = document.getElementById('fedexMappingMsg');
+  showMessage(msgEl, 'info', '書き込み中…');
+
+  chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+    if (!tabs || !tabs[0]) { showMessage(msgEl, 'error', 'タブが見つかりません。'); return; }
+    var tab = tabs[0];
+    var hostname = '';
+    try { hostname = new URL(tab.url).hostname; } catch (e) {}
+    if (hostname !== 'forms.cloud.microsoft' && hostname !== 'forms.office.com') {
+      showMessage(msgEl, 'error', '書き込み先がMicrosoft Formsのページではありません。FedExフォームのタブを開いた状態で実行してください');
+      return;
+    }
+    var payload = state.fedex.mapping.map(function(row) {
+      return { title: row.title, type: row.type, value: row.value };
+    });
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: fedexWriteAnswersFunc,
+      args: [payload]
+    }, function(results) {
+      if (chrome.runtime.lastError) { showMessage(msgEl, 'error', chrome.runtime.lastError.message); return; }
+      var writeResults = (results && results[0] && results[0].result) || [];
+      msgEl.style.display = 'none';
+      state.fedex.writeResults = writeResults;
+      state.fedex.completed = true;
+      fedexRenderResults(writeResults);
+      showFedexSub('fedexSubResult');
+    });
+  });
+}
+
+function fedexRenderResults(results) {
+  var listEl = document.getElementById('fedexResultList');
+  listEl.innerHTML = '';
+  results.forEach(function(r) {
+    var row = document.createElement('div');
+    row.className = 'fedex-result-row ' + (r.success ? 'fedex-result-ok' : 'fedex-result-fail');
+
+    var titleEl = document.createElement('div');
+    titleEl.className = 'fedex-result-title';
+    titleEl.textContent = (r.success ? '✓ ' : '✗ ') + r.title;
+    row.appendChild(titleEl);
+
+    if (!r.success) {
+      var reasonEl = document.createElement('div');
+      reasonEl.className = 'fedex-result-reason';
+      reasonEl.textContent = r.reason || '書き込みに失敗しました。';
+      row.appendChild(reasonEl);
+
+      var valueEl = document.createElement('div');
+      valueEl.className = 'fedex-result-value';
+      valueEl.textContent = r.value || '';
+      row.appendChild(valueEl);
+
+      var copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.className = 'btn btn-ghost btn-xs';
+      copyBtn.textContent = 'コピー';
+      copyBtn.addEventListener('click', function() {
+        var text = r.value || '';
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function() {
+            copyBtn.textContent = 'コピーしました';
+            setTimeout(function() { copyBtn.textContent = 'コピー'; }, 1500);
+          }).catch(function() {
+            copyBtn.textContent = 'コピー失敗';
+          });
+        }
+      });
+      row.appendChild(copyBtn);
+    }
+
+    listEl.appendChild(row);
+  });
+}
+
+// ---------------------------------------------------------
+// 画面遷移・完了処理
+// ---------------------------------------------------------
+function fedexGoToMapping() {
+  fedexCommitItemDraft(); // 下書きが残っていれば先に品目リストへ確定する
+  showFedexSub('fedexSubMapping');
+  fedexReadFormQuestions();
+}
+
+/** フォーム書き込み結果を表示済みの状態で「ホームへ」を選んだ場合の完全クリア
+ *  （TSCA機能のtscaClearAfterCompleteと同じ扱い）。 */
+function fedexClearAfterComplete() {
+  state.fedex.items = [];
+  state.fedex.editingIndex = null;
+  state.fedex.formQuestions = null;
+  state.fedex.mapping = null;
+  state.fedex.writeResults = null;
+  state.fedex.completed = false;
+
+  var awbEl = document.getElementById('fedexAwb');
+  if (awbEl) awbEl.value = '';
+  var emailEl = document.getElementById('fedexRecipientEmail');
+  if (emailEl) emailEl.value = '/';
+  fedexClearDraftItemFields();
+  fedexRenderItemList();
+  fedexUpdateAddItemBtnLabel();
+  var tableEl = document.getElementById('fedexMappingTable');
+  if (tableEl) tableEl.innerHTML = '';
+  var resultEl = document.getElementById('fedexResultList');
+  if (resultEl) resultEl.innerHTML = '';
+  showFedexSub('fedexSubItems');
+}
+
+function fedexStartOver() {
+  fedexClearAfterComplete();
+  showSection('sectionHome');
+}
+
+// ---------------------------------------------------------
+// イベント登録
+// ---------------------------------------------------------
+window.addEventListener('load', function() {
+  document.getElementById('fedexHomeBtn').addEventListener('click', function() {
+    showSection('sectionFedex');
+    showFedexSub('fedexSubItems');
+  });
+
+  document.getElementById('fedexBackHome').addEventListener('click', function() {
+    if (state.fedex.completed) fedexClearAfterComplete();
+    showSection('sectionHome');
+  });
+
+  document.getElementById('fedexAwb').addEventListener('input', function() {
+    this.value = this.value.replace(/[^0-9]/g, '').slice(0, 12);
+  });
+
+  document.getElementById('fedexAddFromPageBtn').addEventListener('click', fedexRunAiFromActivePage);
+  document.getElementById('fedexAddFromUrlBtn').addEventListener('click', fedexRunAiFromUrl);
+
+  document.getElementById('fedexItemMakerName').addEventListener('blur', function() {
+    var name = this.value;
+    if (!fedexNormalizeValue(name)) {
+      document.getElementById('fedexMakerLookupMsg').style.display = 'none';
+      return;
+    }
+    fedexLookupMaker(name, function(found) { fedexApplyMakerLookupResult(found); });
+  });
+  document.getElementById('fedexItemMakerAddress').addEventListener('input', function() {
+    // 補完された住所を人が手で編集した場合は「辞書一致」扱いを解除する
+    // （品目リストへの追加時にカスタムメーカー辞書へ保存する対象になる）。
+    state.fedex.makerAddressSource = 'manual';
+  });
+
+  document.getElementById('fedexAskAiAddressBtn').addEventListener('click', fedexAskAiForAddress);
+  document.getElementById('fedexAiAddressConfirm').addEventListener('change', function() {
+    if (this.checked && state.fedex.aiAddressCandidate) {
+      document.getElementById('fedexItemMakerAddress').value = state.fedex.aiAddressCandidate;
+      state.fedex.makerAddressSource = 'manual';
+      var noteEl = document.getElementById('fedexMakerSourceNote');
+      noteEl.textContent = 'AI候補（未検証・ユーザー確認済み）';
+      noteEl.style.display = '';
+    }
+  });
+  document.getElementById('fedexVerifyOfficialBtn').addEventListener('click', function() {
+    var makerName = fedexNormalizeValue(document.getElementById('fedexItemMakerName').value);
+    if (!makerName) return;
+    var url = 'https://www.google.com/search?q=' + encodeURIComponent(makerName + ' 公式サイト 住所');
+    chrome.tabs.create({ url: url });
+  });
+
+  document.getElementById('fedexAddItemBtn').addEventListener('click', function() {
+    var msgEl = document.getElementById('fedexAiMsg');
+    var committed = fedexCommitItemDraft();
+    if (!committed) {
+      showMessage(msgEl, 'error', '品目名（英語）を入力してから追加してください。');
+      return;
+    }
+    msgEl.style.display = 'none';
+  });
+  document.getElementById('fedexCancelEditItemBtn').addEventListener('click', fedexCancelEditItem);
+
+  document.getElementById('fedexGoToMappingBtn').addEventListener('click', fedexGoToMapping);
+  document.getElementById('fedexRereadBtn').addEventListener('click', fedexReadFormQuestions);
+  document.getElementById('fedexBackToItemsBtn').addEventListener('click', function() {
+    showFedexSub('fedexSubItems');
+  });
+
+  document.getElementById('fedexMappingConfirmCheck').addEventListener('change', function() {
+    document.getElementById('fedexWriteBtn').disabled = !this.checked;
+  });
+  document.getElementById('fedexWriteBtn').addEventListener('click', fedexWriteToForm);
+
+  document.getElementById('fedexStartOverBtn').addEventListener('click', fedexStartOver);
+
+  // 品目入力サブ画面のどれかの欄を編集した時点で「書き込み完了」フラグを解除する
+  // （TSCA機能の同様の保険と同じ考え方。編集済みの内容が「ホームへ」で黙って
+  // クリアされる事故を防ぐ）。
+  var fedexItemsSub = document.getElementById('fedexSubItems');
+  if (fedexItemsSub) {
+    ['input', 'change'].forEach(function(evt) {
+      fedexItemsSub.addEventListener(evt, function() { state.fedex.completed = false; });
+    });
+  }
 });

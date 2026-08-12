@@ -28,6 +28,8 @@
     <div id="tscaAiHomeMsg" class="message" style="display:none;margin-top:6px;"></div>
     <button class="btn btn-success btn-sm" id="watchAiHomeBtn" style="width:100%;margin-top:8px;">⌚ AIでWatch Worksheetを作成する</button>
     <div id="watchAiHomeMsg" class="message" style="display:none;margin-top:6px;"></div>
+    <button class="btn btn-fedex btn-sm" id="fedexHomeBtn" style="width:100%;margin-top:8px;">📦 FedEx貨物フォーム入力</button>
+    <div id="fedexHomeMsg" class="message" style="display:none;margin-top:6px;"></div>
 
     <!-- マニュアルで探す -->
     <div class="section-label" style="margin-top:14px;">マニュアルでHSコードを探す</div>
@@ -550,6 +552,124 @@
         生成されたPDFの内容は必ずご自身で見直してください。最終的な提出判断は輸出者ご本人の責任です。
       </div>
       <button class="btn btn-ghost btn-sm" id="tscaStartOverBtn" style="margin-top:8px;">最初からやり直す</button>
+    </div>
+  </div>
+
+  <!-- ========== セクション: FedEx貨物フォーム入力（v1.6.0で追加） ========== -->
+  <div id="sectionFedex" class="section" style="display:none;">
+    <div class="panel-header">
+      <h1>FedEx貨物フォーム入力</h1>
+      <button class="link-btn" id="fedexBackHome">← ホームへ</button>
+    </div>
+
+    <div class="disclaimer">
+      このツールはFedExの通関申告フォーム（貨物の詳細な説明をご提供ください）への回答案を作成する補助ツールです。
+      <strong>送信ボタンは一切操作しません。</strong>内容は必ずご自身で確認してから送信してください。
+    </div>
+
+    <!-- Sub: 品目リストの作成 -->
+    <div id="fedexSubItems" class="fedex-sub">
+      <div class="section-label">基本情報</div>
+      <div class="form-group">
+        <label for="fedexAwb">航空貨物運送状番号（AWB・12桁）</label>
+        <input type="text" id="fedexAwb" maxlength="12" inputmode="numeric" placeholder="例: 874297801136">
+        <div class="field-note">半角数字12桁で入力してください。ハイフン・スペースは自動で除去されます。</div>
+      </div>
+      <div class="form-group">
+        <label for="fedexRecipientEmail">荷受人のメールアドレス</label>
+        <input type="text" id="fedexRecipientEmail" value="/" placeholder="例: buyer@example.com">
+        <div class="field-note">バイヤーのメールが不明な場合は / のままにしてください。複数ある場合はセミコロン(;)区切りで入力してください。</div>
+      </div>
+
+      <div class="section-label" style="margin-top:14px;">品目リスト</div>
+      <div id="fedexItemList" class="tsca-product-list" style="display:none;"></div>
+
+      <button type="button" class="btn btn-ghost btn-sm" id="fedexAddFromPageBtn" style="width:100%;">📄 開いているページをAIで読み取り</button>
+      <div class="fedex-url-row">
+        <input type="text" id="fedexUrlInput" placeholder="商品ページのURL（メルカリ等）">
+        <button type="button" class="btn btn-ghost btn-sm" id="fedexAddFromUrlBtn">URLから読み取り</button>
+      </div>
+      <div id="fedexAiMsg" class="message" style="display:none;margin-top:8px;"></div>
+      <div class="field-note">eBayの商品ページはURL読み取りに対応していません。タブで開いた状態で「開いているページをAIで読み取り」をご利用ください。</div>
+
+      <div id="fedexAiResultBadge" class="ai-badge" style="display:none;margin-top:10px;"></div>
+
+      <div class="section-label" style="margin-top:14px;">品目の詳細（手入力・AI結果の確認/修正）</div>
+      <div class="form-group">
+        <label for="fedexItemName">品目名（英語）</label>
+        <input type="text" id="fedexItemName" placeholder="例: T-shirts">
+      </div>
+      <div class="form-group">
+        <label for="fedexItemUse">用途（英語）</label>
+        <input type="text" id="fedexItemUse" placeholder="例: for retail sale">
+      </div>
+      <div class="form-group">
+        <label for="fedexItemMaterials">材質と割合（英語）</label>
+        <input type="text" id="fedexItemMaterials" placeholder="例: Cotton 100%">
+      </div>
+      <div class="form-group">
+        <label for="fedexItemMakerName">製造者の会社名（英語）</label>
+        <input type="text" id="fedexItemMakerName" placeholder="例: XXX Manufacturing Co., Ltd.">
+      </div>
+      <div id="fedexMakerLookupMsg" class="message" style="display:none;"></div>
+      <div class="form-group">
+        <label for="fedexItemMakerAddress">製造者の住所（英語）</label>
+        <textarea id="fedexItemMakerAddress" rows="2" placeholder="例: 1-2-3 Marunouchi, Chiyoda-ku, Tokyo, 100-0000, Japan"></textarea>
+      </div>
+      <div id="fedexMakerSourceNote" class="field-note" style="display:none;"></div>
+      <button type="button" class="btn btn-ghost btn-sm" id="fedexAskAiAddressBtn">AIに住所候補を聞く</button>
+      <div id="fedexAiAddressCandidate" class="fedex-ai-candidate" style="display:none;">
+        <div class="fedex-ai-candidate-label">未検証の候補 — 必ずご自身で確認してください</div>
+        <div id="fedexAiAddressCandidateText" class="fedex-ai-candidate-text"></div>
+        <label class="fedex-candidate-check">
+          <input type="checkbox" id="fedexAiAddressConfirm">
+          この住所を採用する
+        </label>
+        <button type="button" class="btn btn-ghost btn-sm" id="fedexVerifyOfficialBtn">公式サイトで確認</button>
+      </div>
+      <div class="form-group">
+        <label for="fedexItemHts">仕向国のHSコード（HTSコード）</label>
+        <input type="text" id="fedexItemHts" placeholder="例: 9999.99.9999">
+        <div class="field-note fedex-hts-caution">候補です。必ず確認してください。</div>
+      </div>
+      <div class="form-group">
+        <label for="fedexItemTextile">製品は繊維製品ですか</label>
+        <select id="fedexItemTextile">
+          <option value="no">いいえ</option>
+          <option value="yes">はい</option>
+        </select>
+      </div>
+
+      <button type="button" class="btn btn-ghost btn-sm" id="fedexAddItemBtn">＋ 品目リストに追加</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="fedexCancelEditItemBtn" style="display:none;">キャンセル</button>
+
+      <button type="button" class="btn btn-primary" id="fedexGoToMappingBtn" style="margin-top:14px;">フォームの質問を読み取る →</button>
+    </div>
+
+    <!-- Sub: 対応表（マッピング） -->
+    <div id="fedexSubMapping" class="fedex-sub" style="display:none;">
+      <div class="section-label">対応表（フォームの質問 ↔ 回答）</div>
+      <div id="fedexMappingMsg" class="message" style="display:none;"></div>
+      <button type="button" class="btn btn-ghost btn-sm" id="fedexRereadBtn">質問を読み取り直す</button>
+      <table class="tsca-confirm-table" id="fedexMappingTable"></table>
+
+      <label class="tsca-confirm-check">
+        <input type="checkbox" id="fedexMappingConfirmCheck">
+        全項目を確認しました
+      </label>
+
+      <button class="btn btn-success" id="fedexWriteBtn" style="margin-top:10px;width:100%;" disabled>フォームに書き込む</button>
+      <button class="btn btn-ghost btn-sm" id="fedexBackToItemsBtn" style="margin-top:8px;">← 品目リストへ戻る</button>
+    </div>
+
+    <!-- Sub: 書き込み結果 -->
+    <div id="fedexSubResult" class="fedex-sub" style="display:none;">
+      <div class="section-label">書き込み結果</div>
+      <div id="fedexResultList"></div>
+      <div class="disclaimer" style="margin-top:10px;">
+        内容は必ずご自身で見直してから送信してください。送信ボタンはこのツールから一切操作していません。
+      </div>
+      <button class="btn btn-ghost btn-sm" id="fedexStartOverBtn" style="margin-top:8px;">最初からやり直す</button>
     </div>
   </div>
 

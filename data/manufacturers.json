@@ -1,0 +1,185 @@
+{
+  "makers": [
+    {
+      "id": "bandai",
+      "names": ["バンダイ", "株式会社バンダイ", "BANDAI", "Bandai", "Bandai Co., Ltd."],
+      "name_en": "Bandai Co., Ltd.",
+      "address_en": "1-4-8 Komagata, Taito-ku, Tokyo 111-8081, Japan",
+      "source": "https://www.bandai.co.jp/en/company/profile/",
+      "source_type": "official_en",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "bandai_spirits",
+      "names": ["BANDAI SPIRITS", "バンダイスピリッツ", "株式会社BANDAI SPIRITS", "Bandai Spirits", "バンプレスト", "Banpresto"],
+      "name_en": "BANDAI SPIRITS Co., Ltd.",
+      "address_en": "Sumitomo Fudosan Tokyo Mita Garden Tower, 3-5-19 Mita, Minato-ku, Tokyo 108-0073, Japan",
+      "source": "https://www.bandaispirits.co.jp/e/about/access/",
+      "source_type": "official_en",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "tomy",
+      "names": ["タカラトミー", "TOMY", "TAKARA TOMY", "Takara Tomy", "TOMY Company, Ltd.", "株式会社タカラトミー"],
+      "name_en": "TOMY Company, Ltd.",
+      "address_en": "7-9-10 Tateishi, Katsushika-ku, Tokyo 124-8511, Japan",
+      "source": "https://www.takaratomy.co.jp/english/company/map.html",
+      "source_type": "official_en",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "takaratomy_arts",
+      "names": ["タカラトミーアーツ", "株式会社タカラトミーアーツ", "Takara Tomy Arts", "TAKARA TOMY A.R.T.S"],
+      "name_en": "Takara Tomy A.R.T.S. Co., Ltd.",
+      "address_en": "4-19-16 Aoto, Katsushika-ku, Tokyo 125-8503, Japan",
+      "source": "https://www.takaratomy-arts.co.jp/company/",
+      "source_type": "official_ja_romanized",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "good_smile_company",
+      "names": ["グッドスマイルカンパニー", "Good Smile Company", "GSC", "株式会社グッドスマイルカンパニー"],
+      "name_en": "Good Smile Company, Inc.",
+      "address_en": "Akiba CO Building 8F, 3-16-12 Sotokanda, Chiyoda-ku, Tokyo 101-0021, Japan",
+      "source": "https://www.goodsmile.info/en/corporate_job (address cross-verified against multiple company registries)",
+      "source_type": "official_ja_romanized",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "max_factory",
+      "names": ["マックスファクトリー", "Max Factory", "MAX FACTORY", "株式会社マックスファクトリー"],
+      "name_en": "Max Factory",
+      "address_en": "Akiba CO Building, 3-16-12 Sotokanda, Chiyoda-ku, Tokyo 101-0021, Japan",
+      "source": "https://www.maxfactory.jp/en/corporate",
+      "source_type": "official_en",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "kotobukiya",
+      "names": ["コトブキヤ", "壽屋", "Kotobukiya", "KOTOBUKIYA", "株式会社壽屋"],
+      "name_en": "Kotobukiya Co., Ltd.",
+      "address_en": "Kotobukiya Bldg., 4-5 Midori-cho, Tachikawa-shi, Tokyo 190-8542, Japan",
+      "source": "https://company.kotobukiya.co.jp/company/corporate-information/",
+      "source_type": "official_ja_romanized",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "megahouse",
+      "names": ["メガハウス", "MegaHouse", "MEGAHOUSE", "株式会社メガハウス"],
+      "name_en": "MegaHouse Corporation",
+      "address_en": "FTK Akihabara, 3-13-8 Sotokanda, Chiyoda-ku, Tokyo 101-0021, Japan",
+      "source": "https://www.megahouse.co.jp/company/info/",
+      "source_type": "official_ja_romanized",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "kaiyodo",
+      "names": ["海洋堂", "Kaiyodo", "KAIYODO", "株式会社海洋堂"],
+      "name_en": "Kaiyodo Co., Ltd.",
+      "address_en": "19-3 Yanagi-cho, Kadoma-shi, Osaka 571-0041, Japan",
+      "source": "https://kaiyodo.co.jp/company/",
+      "source_type": "official_ja_romanized",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "medicom_toy",
+      "names": ["メディコム・トイ", "メディコムトイ", "Medicom Toy", "MEDICOM TOY", "株式会社メディコム・トイ"],
+      "name_en": "Medicom Toy Corporation",
+      "address_en": "3-22-5 Uehara, Shibuya-ku, Tokyo 151-0064, Japan",
+      "source": "https://www.medicomtoy.co.jp/company/ (postal code cross-verified via Japan Post postal code lookup for 東京都渋谷区上原)",
+      "source_type": "official_ja_romanized",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "furyu",
+      "names": ["フリュー", "FuRyu", "FURYU", "フリュー株式会社"],
+      "name_en": "FuRyu Corporation",
+      "address_en": "COMS Building 2F, 2-3 Uguisudani-cho, Shibuya-ku, Tokyo 150-0032, Japan",
+      "source": "https://www.furyu.jp/company/profile.html",
+      "source_type": "official_ja_romanized",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "taito",
+      "names": ["タイトー", "TAITO", "Taito", "株式会社タイトー", "TAITO CORPORATION"],
+      "name_en": "TAITO Corporation",
+      "address_en": "Shinjuku Eastside Square, 6-27-30 Shinjuku, Shinjuku-ku, Tokyo 160-8447, Japan",
+      "source": "https://www.taito.co.jp/corporate/about/access/",
+      "source_type": "official_ja_romanized",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "sega_fave",
+      "names": ["セガフェイブ", "セガ フェイブ", "SEGA FAVE", "SEGA FAVE CORPORATION", "株式会社セガ フェイブ", "SEGA Toys"],
+      "name_en": "SEGA FAVE Corporation",
+      "address_en": "Sumitomo Fudosan Osaki Garden Tower, 1-1-1 Nishi-Shinagawa, Shinagawa-ku, Tokyo 141-0033, Japan",
+      "source": "https://www.segafave.co.jp/company/outline/",
+      "source_type": "official_ja_romanized",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "konami",
+      "names": ["コナミデジタルエンタテインメント", "Konami Digital Entertainment", "KONAMI", "Konami", "コナミ"],
+      "name_en": "Konami Digital Entertainment Co., Ltd.",
+      "address_en": "1-11-1 Ginza, Chuo-ku, Tokyo 104-0061, Japan",
+      "source": "https://www.konami.com/games/corporate/en/",
+      "source_type": "official_en",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "bushiroad",
+      "names": ["ブシロード", "Bushiroad", "BUSHIROAD", "Bushiroad Inc.", "株式会社ブシロード"],
+      "name_en": "Bushiroad Inc.",
+      "address_en": "Sumitomo Nakano-Sakaue Building, 1-38-1 Chuo, Nakano-ku, Tokyo 164-0011, Japan",
+      "source": "https://bushiroad.co.jp/en/company/overview (postal code cross-verified via Japan Post postal code lookup for 東京都中野区中央)",
+      "source_type": "official_en",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "pokemon_company",
+      "names": ["株式会社ポケモン", "The Pokémon Company", "The Pokemon Company", "TPC", "ポケモン"],
+      "name_en": "The Pokémon Company",
+      "address_en": "Roppongi Hills Mori Tower 47F, 6-10-1 Roppongi, Minato-ku, Tokyo 106-6147, Japan",
+      "source": "https://corporate.pokemon.co.jp/en/aboutus/company/",
+      "source_type": "official_en",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "nintendo",
+      "names": ["任天堂", "Nintendo", "NINTENDO", "Nintendo Co., Ltd.", "任天堂株式会社"],
+      "name_en": "Nintendo Co., Ltd.",
+      "address_en": "11-1 Hokotate-cho, Kamitoba, Minami-ku, Kyoto 601-8501, Japan",
+      "source": "https://www.nintendo.co.jp/corporate/en/offices/index.html",
+      "source_type": "official_en",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "square_enix",
+      "names": ["スクウェア・エニックス", "Square Enix", "SQUARE ENIX", "Square Enix Co., Ltd.", "株式会社スクウェア・エニックス"],
+      "name_en": "Square Enix Co., Ltd.",
+      "address_en": "Shinjuku Eastside Square, 6-27-30 Shinjuku, Shinjuku-ku, Tokyo 160-8430, Japan",
+      "source": "https://www.hd.square-enix.com/eng/company/outline.html",
+      "source_type": "official_en",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "ensky",
+      "names": ["エンスカイ", "Ensky", "ENSKY", "株式会社エンスカイ"],
+      "name_en": "Ensky Co., Ltd.",
+      "address_en": "1-11-1 Inari, Soka-shi, Saitama 340-0003, Japan",
+      "source": "https://www.ensky.co.jp/ (postal code cross-verified via company registry search)",
+      "source_type": "official_ja_romanized",
+      "verified": "2026-08-12"
+    },
+    {
+      "id": "alter",
+      "names": ["アルター", "Alter", "ALTER", "有限会社アルター", "Alter Co., Ltd."],
+      "name_en": "Alter Co., Ltd.",
+      "address_en": "ZX Ginza 7F, 1-5-13 Ginza, Chuo-ku, Tokyo 104-0061, Japan",
+      "source": "https://www.alter-web.jp/company/",
+      "source_type": "official_ja_romanized",
+      "verified": "2026-08-12"
+    }
+  ],
+  "unresolved": []
+}
