@@ -569,6 +569,16 @@
 
     <!-- Sub: 品目リストの作成 -->
     <div id="fedexSubItems" class="fedex-sub">
+      <div id="fedexGuideBox" class="fedex-guide-box">
+        <div class="fedex-guide-title">はじめての方へ — 操作の流れ</div>
+        <div class="fedex-guide-steps">
+          <div id="fedexGuideStep1" class="fedex-guide-step">① 出荷した商品のページ（eBayまたはメルカリ等仕入れ先）をタブで開く</div>
+          <div id="fedexGuideStep2" class="fedex-guide-step">② 下の「開いているページをAIで読み取り」で品目を追加（複数商品は繰り返す）</div>
+          <div id="fedexGuideStep3" class="fedex-guide-step">③ 運送状番号（12桁）を入力</div>
+          <div id="fedexGuideStep4" class="fedex-guide-step">④ 「フォームの質問を読み取る →」で次の画面へ</div>
+        </div>
+      </div>
+
       <div class="section-label">基本情報</div>
       <div class="form-group">
         <label for="fedexAwb">航空貨物運送状番号（AWB・12桁）</label>
@@ -611,12 +621,31 @@
         <label for="fedexItemMakerName">製造者の会社名（英語）</label>
         <input type="text" id="fedexItemMakerName" placeholder="例: XXX Manufacturing Co., Ltd.">
       </div>
+
+      <div class="fedex-maker-btn-row">
+        <button type="button" class="btn btn-ghost btn-xs" id="fedexAskAiMakerBtn">🤖 AIにメーカー候補を聞く</button>
+        <button type="button" class="btn btn-ghost btn-xs" id="fedexPickMakerListBtn">📋 一覧から選ぶ</button>
+        <button type="button" class="btn btn-ghost btn-xs" id="fedexUnknownMakerBtn">❓ 不明のまま進む</button>
+      </div>
+      <div id="fedexMakerBtnMsg" class="message" style="display:none;"></div>
+
+      <div id="fedexAiMakerCandidates" class="fedex-maker-candidates" style="display:none;">
+        <div class="fedex-maker-candidates-label">候補です。商品パッケージ等と食い違う場合は修正してください</div>
+        <div id="fedexAiMakerCandidatesList"></div>
+      </div>
+
+      <div id="fedexMakerListPanel" class="fedex-maker-list-panel" style="display:none;">
+        <div id="fedexMakerListItems" class="fedex-maker-list-items"></div>
+        <button type="button" class="btn btn-ghost btn-xs" id="fedexMakerListCloseBtn">閉じる</button>
+      </div>
+
       <div id="fedexMakerLookupMsg" class="message" style="display:none;"></div>
       <div class="form-group">
         <label for="fedexItemMakerAddress">製造者の住所（英語）</label>
         <textarea id="fedexItemMakerAddress" rows="2" placeholder="例: 1-2-3 Marunouchi, Chiyoda-ku, Tokyo, 100-0000, Japan"></textarea>
       </div>
       <div id="fedexMakerSourceNote" class="field-note" style="display:none;"></div>
+      <div id="fedexMakerUnknownHint" class="field-note" style="display:none;">分かる範囲で手入力してください。不明なら / を入力してください。</div>
       <button type="button" class="btn btn-ghost btn-sm" id="fedexAskAiAddressBtn">AIに住所候補を聞く</button>
       <div id="fedexAiAddressCandidate" class="fedex-ai-candidate" style="display:none;">
         <div class="fedex-ai-candidate-label">未検証の候補 — 必ずご自身で確認してください</div>
@@ -648,6 +677,10 @@
 
     <!-- Sub: 対応表（マッピング） -->
     <div id="fedexSubMapping" class="fedex-sub" style="display:none;">
+      <div class="fedex-guide-box">
+        FedExから届いたメールのフォームページをタブで開いた状態で、下の「フォームの質問を読み取る」を押してください。
+      </div>
+
       <div class="section-label">対応表（フォームの質問 ↔ 回答）</div>
       <div id="fedexMappingMsg" class="message" style="display:none;"></div>
       <button type="button" class="btn btn-ghost btn-sm" id="fedexRereadBtn">質問を読み取り直す</button>

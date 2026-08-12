@@ -5540,6 +5540,11 @@ state.fedex = {
                           // 'manual'のときだけ、品目リストへの追加時にカスタムメーカー辞書へ自動保存する
                           // （辞書ヒット済み・AI候補をそのまま確認しただけの場合は重複保存しない）。
   aiAddressCandidate: null, // 「AIに住所候補を聞く」の直近の結果（未検証の候補。確認チェックを入れるまで採用しない）
+  lastPageInfo: null,    // 直近にAIで読み取ったページ情報（getPageInfo/getFedexPageInfoFromUrlの結果）。
+                          // 「AIにメーカー候補を聞く」で品目名と併せてAIへの入力に使う（v1.7.0で追加）。
+  makerAiSeq: 0,          // 「AIにメーカー候補を聞く」の世代トークン。品目の切替・下書きクリア時に
+                          // ++することで、遅れて届いた古いAI応答が現在の編集対象に誤反映されるのを防ぐ。
+  addressAiSeq: 0,        // 「AIに住所候補を聞く」の世代トークン（用途はmakerAiSeqと同様、別カウンタ）。
   makersData: null,       // data/manufacturers.json の内容（遅延ロード）
   formQuestions: null,    // フォーム読み取り結果 [{title, type, options}]
   mapping: null,          // 対応表 [{title, type, options, fieldKey, value, matched}]
@@ -5688,6 +5693,7 @@ function fedexRunAiFromActivePage() {
       showMessage(msgEl, 'error', (errReason || 'ページ情報を取得できませんでした') + '。商品ページを開いてから試してください。手入力で品目を追加することもできます。');
       return;
     }
+    state.fedex.lastPageInfo = pageInfo;
     fedexCallAiJson(pageInfo, function(err, aiData) {
       btn.disabled = false;
       if (err || !aiData) {
@@ -5880,6 +5886,7 @@ function fedexRunAiFromUrl() {
       showMessage(msgEl, 'error', errReason || 'ページ情報を取得できませんでした');
       return;
     }
+    state.fedex.lastPageInfo = pageInfo;
     showMessage(msgEl, 'info', '分析中…');
     fedexCallAiJson(pageInfo, function(err, aiData) {
       btn.disabled = false;
@@ -5896,6 +5903,8 @@ function fedexRunAiFromUrl() {
 /** AI応答を品目編集欄（下書き）に流し込む。まだ品目リストへは追加しない
  *  （TSCA機能と同様、必ず人が確認・修正してから「＋ 品目リストに追加」で確定する）。 */
 function fedexFillDraftFromAi(aiData) {
+  state.fedex.makerAiSeq++;
+  state.fedex.addressAiSeq++;
   document.getElementById('fedexItemName').value = aiData.name_en || '';
   document.getElementById('fedexItemUse').value = aiData.use_en || '';
   document.getElementById('fedexItemMaterials').value = aiData.materials_en || '';
@@ -5906,6 +5915,10 @@ function fedexFillDraftFromAi(aiData) {
   state.fedex.makerAddressSource = '';
   document.getElementById('fedexMakerSourceNote').style.display = 'none';
   document.getElementById('fedexAiAddressCandidate').style.display = 'none';
+  document.getElementById('fedexAiMakerCandidates').style.display = 'none';
+  document.getElementById('fedexMakerListPanel').style.display = 'none';
+  document.getElementById('fedexMakerUnknownHint').style.display = 'none';
+  document.getElementById('fedexMakerBtnMsg').style.display = 'none';
   showFedexAiBadge(true, aiData.notes);
 
   if (aiData.maker_name_en) {
@@ -5947,7 +5960,12 @@ function fedexLookupMaker(nameStr, cb) {
         for (var j = 0; j < names.length; j++) {
           var n = fedexNormalizeValue(names[j]).toLowerCase();
           if (!n) continue;
-          if (q.indexOf(n) !== -1 || n.indexOf(q) !== -1) { found = all[i]; break; }
+          // 5文字以下の短い名称（GSC/TPC/TOMY/Alter/TAITO等）は部分一致だと
+          // 無関係な社名の一部に誤爆しやすいため完全一致のみでヒットとする。
+          // 6文字以上は従来どおり双方向の部分一致。
+          if (n.length <= 5) {
+            if (q === n) { found = all[i]; break; }
+          } else if (q.indexOf(n) !== -1 || n.indexOf(q) !== -1) { found = all[i]; break; }
         }
       }
       cb(found);
@@ -6029,6 +6047,9 @@ function fedexAskAiForAddress() {
   btn.disabled = true;
   showMessage(msgEl, 'info', 'AIに住所候補を問い合わせ中…');
 
+  state.fedex.addressAiSeq++;
+  var mySeq = state.fedex.addressAiSeq;
+
   var systemPrompt = [
     'You are helping find the likely business address of a Japanese (or other) manufacturer for a US customs declaration.',
     'Given a manufacturer/company name, return ONLY a JSON object with exactly these fields:',
@@ -6041,6 +6062,7 @@ function fedexAskAiForAddress() {
 
   fedexOpenAiJsonCall(systemPrompt, userContent, function(err, obj) {
     btn.disabled = false;
+    if (mySeq !== state.fedex.addressAiSeq) return; // 別品目への切替等で無効化された古い応答は破棄
     if (err || !obj || !fedexNormalizeValue(obj.address_en)) {
       showMessage(msgEl, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '住所候補を取得できませんでした') + '。手入力してください。');
       return;
@@ -6052,6 +6074,197 @@ function fedexAskAiForAddress() {
     document.getElementById('fedexAiAddressConfirm').checked = false;
     document.getElementById('fedexAiAddressCandidate').style.display = '';
   });
+}
+
+// ---------------------------------------------------------
+// メーカー名の候補提示（v1.7.0で追加）— 「AIにメーカー候補を聞く」「一覧から選ぶ」
+// 「不明のまま進む」の3導線。いずれもメーカー名欄の直下に配置。
+// ---------------------------------------------------------
+
+/** 品目名＋直近のAI読み取り済みページ情報（あれば）をAIに渡し、正式な会社名の候補を
+ *  最大3件JSONで取得する。ブランド名ではなく法人名（Co., Ltd.等）を返させる。 */
+function fedexCallAiMakerCandidates(itemName, pageInfo, cb) {
+  var lines = ['Item name (English, as currently entered for this shipment): ' + itemName];
+  if (pageInfo) {
+    if (pageInfo.productName) lines.push('Product page title: ' + pageInfo.productName);
+    if (pageInfo.brand)       lines.push('Brand shown on page: ' + pageInfo.brand);
+    if (pageInfo.category)    lines.push('Category on site: ' + pageInfo.category);
+    if (pageInfo.description) lines.push('Description: ' + pageInfo.description);
+    if (pageInfo.url)         lines.push('Product URL: ' + pageInfo.url);
+  }
+  var userContent = lines.join('\n');
+
+  var systemPrompt = [
+    'You are helping identify the manufacturer for a US customs declaration (FedEx shipment) of a Japanese toy, figure, or trading card product.',
+    'Return the official English LEGAL COMPANY NAME (juridical person) of the Japanese toy/figure/trading card manufacturer most likely responsible for this product — a legal entity name such as "BANDAI SPIRITS Co., Ltd.", NOT a brand name, product line name, or IP/franchise name.',
+    'If you cannot determine a single manufacturer with confidence, return up to 3 plausible candidates, most likely first.',
+    'Return ONLY a JSON object with exactly this field:',
+    '  "candidates": an array of up to 3 objects, each with:',
+    '    "name_en": the official English company name (half-width characters, include the legal suffix such as "Co., Ltd." when known)',
+    '    "name_ja": the Japanese company name if known, otherwise ""',
+    '    "reason": one short sentence in Japanese explaining why this candidate is plausible',
+    'If you cannot determine any plausible candidate at all, return {"candidates": []}.',
+    'Return ONLY the JSON object. No markdown, no code fences, no explanation outside the JSON.'
+  ].join('\n');
+
+  fedexOpenAiJsonCall(systemPrompt, userContent, cb);
+}
+
+function fedexAskAiForMaker() {
+  var btn = document.getElementById('fedexAskAiMakerBtn');
+  var msgEl = document.getElementById('fedexMakerBtnMsg');
+  var itemName = fedexNormalizeValue(document.getElementById('fedexItemName').value);
+
+  document.getElementById('fedexAiMakerCandidates').style.display = 'none';
+  document.getElementById('fedexMakerListPanel').style.display = 'none';
+
+  if (!itemName) {
+    showMessage(msgEl, 'error', '先に品目名を入力してください。');
+    return;
+  }
+  if (!state.openaiKey) {
+    showMessage(msgEl, 'error', 'APIキーが未設定です。設定画面で OpenAI APIキーを入力してください。');
+    return;
+  }
+
+  btn.disabled = true;
+  showMessage(msgEl, 'info', 'AIにメーカー候補を問い合わせ中…');
+
+  state.fedex.makerAiSeq++;
+  var mySeq = state.fedex.makerAiSeq;
+
+  fedexCallAiMakerCandidates(itemName, state.fedex.lastPageInfo, function(err, obj) {
+    btn.disabled = false;
+    if (mySeq !== state.fedex.makerAiSeq) return; // 別品目への切替等で無効化された古い応答は破棄
+    if (err || !obj || !obj.candidates || !obj.candidates.length) {
+      showMessage(msgEl, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '候補を取得できませんでした') + '。「一覧から選ぶ」を試すか、手入力してください。');
+      return;
+    }
+    msgEl.style.display = 'none';
+    fedexRenderMakerAiCandidates(obj.candidates);
+  });
+}
+
+/** AIのメーカー候補（最大3件）を選択式のボタン列として表示する。選ぶと
+ *  fedexSelectMakerCandidateへ渡し、名前を反映のうえ既存の辞書照合をそのまま実行する。 */
+function fedexRenderMakerAiCandidates(candidates) {
+  var wrap = document.getElementById('fedexAiMakerCandidates');
+  var listEl = document.getElementById('fedexAiMakerCandidatesList');
+  listEl.innerHTML = '';
+
+  candidates.slice(0, 3).forEach(function(c) {
+    var nameEn = fedexNormalizeValue(c && c.name_en);
+    if (!nameEn) return;
+    var row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'fedex-maker-candidate-btn';
+
+    var nameEl = document.createElement('div');
+    nameEl.className = 'fedex-maker-candidate-name';
+    var nameJa = fedexNormalizeValue(c.name_ja);
+    nameEl.textContent = nameEn + (nameJa ? '（' + nameJa + '）' : '');
+    row.appendChild(nameEl);
+
+    var reason = fedexNormalizeValue(c.reason);
+    if (reason) {
+      var reasonEl = document.createElement('div');
+      reasonEl.className = 'fedex-maker-candidate-reason';
+      reasonEl.textContent = reason;
+      row.appendChild(reasonEl);
+    }
+
+    row.addEventListener('click', function() { fedexSelectMakerCandidate(nameEn); });
+    listEl.appendChild(row);
+  });
+
+  if (!listEl.children.length) {
+    wrap.style.display = 'none';
+    var msgEl = document.getElementById('fedexMakerBtnMsg');
+    showMessage(msgEl, 'warn', 'AIから有効な候補を得られませんでした。「一覧から選ぶ」を試すか、手入力してください。');
+    return;
+  }
+  wrap.style.display = '';
+}
+
+/** AI候補または一覧のいずれかから会社名が選ばれたときの共通処理。
+ *  メーカー名欄に反映し、既存の辞書照合（fedexLookupMaker→fedexApplyMakerLookupResult）を
+ *  即実行する。辞書ヒットなら住所・出典が自動で入り、ヒットしなければ
+ *  fedexApplyMakerLookupResultが既存の「AIに住所候補を聞く」への誘導文を表示する。 */
+function fedexSelectMakerCandidate(nameEn) {
+  document.getElementById('fedexItemMakerName').value = nameEn;
+  document.getElementById('fedexItemMakerAddress').value = '';
+  document.getElementById('fedexMakerSourceNote').style.display = 'none';
+  document.getElementById('fedexAiMakerCandidates').style.display = 'none';
+  document.getElementById('fedexMakerListPanel').style.display = 'none';
+  document.getElementById('fedexMakerUnknownHint').style.display = 'none';
+  document.getElementById('fedexMakerBtnMsg').style.display = 'none';
+  state.fedex.makerAddressSource = '';
+  fedexLookupMaker(nameEn, function(found) { fedexApplyMakerLookupResult(found); });
+}
+
+/** 「一覧から選ぶ」。内蔵辞書（data/manufacturers.json）＋chrome.storage.localの
+ *  保存済みカスタムメーカーを一覧表示する。 */
+function fedexShowMakerList() {
+  var msgEl = document.getElementById('fedexMakerBtnMsg');
+  msgEl.style.display = 'none';
+  document.getElementById('fedexAiMakerCandidates').style.display = 'none';
+
+  fedexEnsureMakersData(function() {
+    chrome.storage.local.get(['_hsFedexCustomMakers'], function(stored) {
+      var custom = [];
+      try { custom = JSON.parse(stored._hsFedexCustomMakers || '[]'); } catch (e) { custom = []; }
+      var all = (state.fedex.makersData.makers || []).concat(custom);
+      fedexRenderMakerListPanel(all);
+    });
+  });
+}
+
+function fedexRenderMakerListPanel(all) {
+  var panel = document.getElementById('fedexMakerListPanel');
+  var listEl = document.getElementById('fedexMakerListItems');
+  listEl.innerHTML = '';
+
+  if (!all.length) {
+    var empty = document.createElement('div');
+    empty.className = 'fedex-maker-list-empty';
+    empty.textContent = '登録されているメーカーがありません。';
+    listEl.appendChild(empty);
+  } else {
+    all.forEach(function(m) {
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'fedex-maker-list-row';
+      row.textContent = m.name_en || (m.names && m.names[0]) || '(名称未設定)';
+      row.addEventListener('click', function() { fedexSelectMakerFromList(m); });
+      listEl.appendChild(row);
+    });
+  }
+  panel.style.display = '';
+}
+
+/** 一覧から選んだ場合は、辞書エントリと同じ形（name_en/address_en/source/note）を
+ *  そのままfedexApplyMakerLookupResultへ渡し、住所・出典欄への反映処理を一本化する。 */
+function fedexSelectMakerFromList(m) {
+  document.getElementById('fedexItemMakerName').value = m.name_en || '';
+  document.getElementById('fedexMakerListPanel').style.display = 'none';
+  document.getElementById('fedexAiMakerCandidates').style.display = 'none';
+  document.getElementById('fedexMakerUnknownHint').style.display = 'none';
+  document.getElementById('fedexMakerBtnMsg').style.display = 'none';
+  fedexApplyMakerLookupResult(m);
+}
+
+/** 「不明のまま進む」。メーカー名欄に固定文言を入れ、住所欄は空のまま
+ *  手入力を促すヒントを表示する。住所を空にするため辞書への自動保存対象にはならない。 */
+function fedexSetMakerUnknown() {
+  document.getElementById('fedexItemMakerName').value = 'Unknown (secondhand goods)';
+  document.getElementById('fedexItemMakerAddress').value = '';
+  state.fedex.makerAddressSource = '';
+  document.getElementById('fedexMakerSourceNote').style.display = 'none';
+  document.getElementById('fedexMakerLookupMsg').style.display = 'none';
+  document.getElementById('fedexAiMakerCandidates').style.display = 'none';
+  document.getElementById('fedexMakerListPanel').style.display = 'none';
+  document.getElementById('fedexMakerBtnMsg').style.display = 'none';
+  document.getElementById('fedexMakerUnknownHint').style.display = '';
 }
 
 // ---------------------------------------------------------
@@ -6082,16 +6295,32 @@ function fedexReadDraftItem() {
   };
 }
 
+/** メーカー関連パネル（AI候補・住所候補・一覧・不明ヒント・メッセージ）をすべて非表示にする。
+ *  fedexClearDraftItemFieldsの非表示処理を切り出したもの（fedexGoToMappingの画面遷移時にも使う）。 */
+function fedexHideMakerPanels() {
+  // パネルを閉じる際は進行中のAI応答も世代トークンで無効化する
+  // （閉じた後に遅延応答がパネルを再表示・誤反映するのを防ぐ）
+  state.fedex.makerAiSeq++;
+  state.fedex.addressAiSeq++;
+  document.getElementById('fedexMakerSourceNote').style.display = 'none';
+  document.getElementById('fedexMakerLookupMsg').style.display = 'none';
+  document.getElementById('fedexAiAddressCandidate').style.display = 'none';
+  document.getElementById('fedexAiMakerCandidates').style.display = 'none';
+  document.getElementById('fedexMakerListPanel').style.display = 'none';
+  document.getElementById('fedexMakerUnknownHint').style.display = 'none';
+  document.getElementById('fedexMakerBtnMsg').style.display = 'none';
+}
+
 function fedexClearDraftItemFields() {
+  state.fedex.makerAiSeq++;
+  state.fedex.addressAiSeq++;
   ['fedexItemName', 'fedexItemUse', 'fedexItemMaterials', 'fedexItemMakerName', 'fedexItemMakerAddress', 'fedexItemHts'].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.value = '';
   });
   var textileEl = document.getElementById('fedexItemTextile');
   if (textileEl) textileEl.value = 'no';
-  document.getElementById('fedexMakerSourceNote').style.display = 'none';
-  document.getElementById('fedexMakerLookupMsg').style.display = 'none';
-  document.getElementById('fedexAiAddressCandidate').style.display = 'none';
+  fedexHideMakerPanels();
   state.fedex.makerAddressSource = '';
   state.fedex.aiAddressCandidate = null;
   showFedexAiBadge(false);
@@ -6105,7 +6334,35 @@ function fedexUpdateAddItemBtnLabel() {
   if (cancelBtn) cancelBtn.style.display = editing ? '' : 'none';
 }
 
+/** ①②③④の手順ガイド（fedexGuideBox）の現在地を強調表示する。
+ *  品目0件なら①②、品目ありでAWB未入力なら③、両方揃えば④を強調する。 */
+function fedexUpdateGuideProgress() {
+  var step1 = document.getElementById('fedexGuideStep1');
+  var step2 = document.getElementById('fedexGuideStep2');
+  var step3 = document.getElementById('fedexGuideStep3');
+  var step4 = document.getElementById('fedexGuideStep4');
+  if (!step1 || !step2 || !step3 || !step4) return;
+
+  [step1, step2, step3, step4].forEach(function(el) {
+    el.classList.remove('fedex-guide-step-active');
+  });
+
+  var hasItems = state.fedex.items.length > 0;
+  var awbEl = document.getElementById('fedexAwb');
+  var awbComplete = !!(awbEl && awbEl.value && awbEl.value.length === 12);
+
+  if (!hasItems) {
+    step1.classList.add('fedex-guide-step-active');
+    step2.classList.add('fedex-guide-step-active');
+  } else if (!awbComplete) {
+    step3.classList.add('fedex-guide-step-active');
+  } else {
+    step4.classList.add('fedex-guide-step-active');
+  }
+}
+
 function fedexRenderItemList() {
+  fedexUpdateGuideProgress();
   var listEl = document.getElementById('fedexItemList');
   if (!listEl) return;
   var items = state.fedex.items;
@@ -6176,6 +6433,8 @@ function fedexCommitItemDraft() {
 function fedexEditItem(index) {
   var it = state.fedex.items[index];
   if (!it) return;
+  state.fedex.makerAiSeq++;
+  state.fedex.addressAiSeq++;
   state.fedex.editingIndex = index;
   document.getElementById('fedexItemName').value = it.name_en;
   document.getElementById('fedexItemUse').value = it.use_en;
@@ -6190,12 +6449,18 @@ function fedexEditItem(index) {
   document.getElementById('fedexMakerSourceNote').style.display = 'none';
   document.getElementById('fedexMakerLookupMsg').style.display = 'none';
   document.getElementById('fedexAiAddressCandidate').style.display = 'none';
+  document.getElementById('fedexAiMakerCandidates').style.display = 'none';
+  document.getElementById('fedexMakerListPanel').style.display = 'none';
+  document.getElementById('fedexMakerUnknownHint').style.display = 'none';
+  document.getElementById('fedexMakerBtnMsg').style.display = 'none';
   showFedexAiBadge(false);
   fedexRenderItemList();
   fedexUpdateAddItemBtnLabel();
 }
 
 function fedexCancelEditItem() {
+  state.fedex.makerAiSeq++;
+  state.fedex.addressAiSeq++;
   state.fedex.editingIndex = null;
   fedexClearDraftItemFields();
   fedexRenderItemList();
@@ -6437,7 +6702,7 @@ function fedexReadFormQuestions() {
     var hostname = '';
     try { hostname = new URL(tab.url).hostname; } catch (e) {}
     if (hostname !== 'forms.cloud.microsoft' && hostname !== 'forms.office.com') {
-      showMessage(msgEl, 'error', 'FedExのフォームページを開いた状態でお試しください。');
+      showMessage(msgEl, 'error', 'FedExのフォームページが前面のタブに開かれていません。フォームのページを開いてからもう一度押してください');
       resetMappingConfirmGate();
       return;
     }
@@ -6658,6 +6923,7 @@ function fedexRenderResults(results) {
 // ---------------------------------------------------------
 function fedexGoToMapping() {
   fedexCommitItemDraft(); // 下書きが残っていれば先に品目リストへ確定する
+  fedexHideMakerPanels(); // 確定の成否にかかわらず、対応表画面へ遷移する前にメーカー関連パネルを必ず閉じる
   showFedexSub('fedexSubMapping');
   fedexReadFormQuestions();
 }
@@ -6707,6 +6973,7 @@ window.addEventListener('load', function() {
 
   document.getElementById('fedexAwb').addEventListener('input', function() {
     this.value = this.value.replace(/[^0-9]/g, '').slice(0, 12);
+    fedexUpdateGuideProgress();
   });
 
   document.getElementById('fedexAddFromPageBtn').addEventListener('click', fedexRunAiFromActivePage);
@@ -6714,12 +6981,20 @@ window.addEventListener('load', function() {
 
   document.getElementById('fedexItemMakerName').addEventListener('blur', function() {
     var name = this.value;
+    document.getElementById('fedexMakerUnknownHint').style.display = 'none';
     if (!fedexNormalizeValue(name)) {
       document.getElementById('fedexMakerLookupMsg').style.display = 'none';
       return;
     }
     fedexLookupMaker(name, function(found) { fedexApplyMakerLookupResult(found); });
   });
+
+  document.getElementById('fedexAskAiMakerBtn').addEventListener('click', fedexAskAiForMaker);
+  document.getElementById('fedexPickMakerListBtn').addEventListener('click', fedexShowMakerList);
+  document.getElementById('fedexMakerListCloseBtn').addEventListener('click', function() {
+    document.getElementById('fedexMakerListPanel').style.display = 'none';
+  });
+  document.getElementById('fedexUnknownMakerBtn').addEventListener('click', fedexSetMakerUnknown);
   document.getElementById('fedexItemMakerAddress').addEventListener('input', function() {
     // 補完された住所を人が手で編集した場合は「辞書一致」扱いを解除する
     // （品目リストへの追加時にカスタムメーカー辞書へ保存する対象になる）。
@@ -6776,4 +7051,6 @@ window.addEventListener('load', function() {
       fedexItemsSub.addEventListener(evt, function() { state.fedex.completed = false; });
     });
   }
+
+  fedexUpdateGuideProgress();
 });

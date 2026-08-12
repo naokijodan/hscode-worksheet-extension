@@ -1448,5 +1448,112 @@ select:focus {
   font-size: 11px;
 }
 
+.fedex-guide-box {
+  background: #E3F2FD;
+  border: 1px solid #90CAF9;
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: #0D47A1;
+  line-height: 1.5;
+}
+.fedex-guide-title {
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+.fedex-guide-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.fedex-guide-step {
+  color: #555;
+}
+.fedex-guide-step-active {
+  color: #0D47A1;
+  font-weight: bold;
+}
+
+.fedex-maker-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+}
+.fedex-maker-btn-row .btn { margin-bottom: 0; }
+
+.fedex-maker-candidates {
+  background: #FFF8E1;
+  border: 1px solid #F9A825;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 6px 0 10px;
+  font-size: 12px;
+}
+.fedex-maker-candidates-label {
+  font-weight: bold;
+  color: #E65100;
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+.fedex-maker-candidate-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 1px solid #F9A825;
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.fedex-maker-candidate-btn:hover { background: #FFF3CD; }
+.fedex-maker-candidate-btn:last-child { margin-bottom: 0; }
+.fedex-maker-candidate-name {
+  font-weight: bold;
+  color: #333;
+  font-size: 12px;
+}
+.fedex-maker-candidate-reason {
+  color: #666;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.fedex-maker-list-panel {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 6px 0 10px;
+}
+.fedex-maker-list-items {
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+.fedex-maker-list-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: none;
+  border-bottom: 1px solid #eee;
+  padding: 6px 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #333;
+  font-family: inherit;
+}
+.fedex-maker-list-row:hover { background: #f0f0f0; }
+.fedex-maker-list-row:last-child { border-bottom: none; }
+.fedex-maker-list-empty {
+  font-size: 12px;
+  color: #888;
+  padding: 6px 4px;
+}
+
 /* FedEx機能のダークモード個別指定は削除（パネルbodyは常にライト背景のため、
    背景だけ暗転すると文字が読めなくなる。ライト配色で固定する） */
