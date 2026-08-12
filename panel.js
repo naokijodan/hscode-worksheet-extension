@@ -6236,6 +6236,7 @@ function fedexReadQuestionsFunc() {
       type = 'radio';
       radioEls.forEach(function(r) {
         var lbl = r.getAttribute('aria-label');
+        if (!lbl) lbl = r.getAttribute('value') || r.getAttribute('data-automation-value');
         if (!lbl) {
           var labelEl = r.closest('label');
           if (labelEl) lbl = textOf(labelEl);
@@ -6245,7 +6246,7 @@ function fedexReadQuestionsFunc() {
         if (lbl && options.indexOf(lbl) === -1) options.push(lbl);
       });
     } else {
-      var textInput = container.querySelector('input[type="text"], textarea');
+      var textInput = container.querySelector('[data-automation-id="textInput"], textarea, input[type="text"], input[type="email"], input[type="number"], input[type="tel"], input:not([type])');
       if (textInput) type = 'text';
     }
     return { type: type, options: options };
@@ -6479,6 +6480,7 @@ function fedexWriteAnswersFunc(payload) {
       type = 'radio';
       radioEls.forEach(function(r) {
         var lbl = r.getAttribute('aria-label');
+        if (!lbl) lbl = r.getAttribute('value') || r.getAttribute('data-automation-value');
         if (!lbl) {
           var labelEl = r.closest('label');
           if (labelEl) lbl = textOf(labelEl);
@@ -6488,10 +6490,10 @@ function fedexWriteAnswersFunc(payload) {
         if (lbl) options.push({ label: lbl, el: r });
       });
     } else {
-      var textInput = container.querySelector('input[type="text"], textarea');
+      var textInput = container.querySelector('[data-automation-id="textInput"], textarea, input[type="text"], input[type="email"], input[type="number"], input[type="tel"], input:not([type])');
       if (textInput) type = 'text';
     }
-    return { type: type, options: options, textInput: container.querySelector('input[type="text"], textarea') };
+    return { type: type, options: options, textInput: container.querySelector('[data-automation-id="textInput"], textarea, input[type="text"], input[type="email"], input[type="number"], input[type="tel"], input:not([type])') };
   }
 
   function collectContainers() {
