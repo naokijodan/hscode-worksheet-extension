@@ -1458,21 +1458,34 @@ select:focus {
   color: #0D47A1;
   line-height: 1.5;
 }
-.fedex-guide-title {
-  font-weight: bold;
-  margin-bottom: 6px;
-}
-.fedex-guide-steps {
+.fedex-step-header {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.fedex-guide-step {
-  color: #555;
-}
-.fedex-guide-step-active {
-  color: #0D47A1;
+  align-items: center;
+  gap: 8px;
+  color: #d32f2f;
+  font-size: 16px;
   font-weight: bold;
+  margin: 18px 0 6px;
+}
+.fedex-step-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 2px;
+  border-radius: 50%;
+  background: #d32f2f;
+  color: #fff;
+  font-size: 13px;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+.fedex-step-desc {
+  font-size: 13px;
+  color: inherit;
+  margin-bottom: 8px;
+  line-height: 1.5;
 }
 
 .fedex-maker-btn-row {

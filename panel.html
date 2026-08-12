@@ -569,15 +569,8 @@
 
     <!-- Sub: 品目リストの作成 -->
     <div id="fedexSubItems" class="fedex-sub">
-      <div id="fedexGuideBox" class="fedex-guide-box">
-        <div class="fedex-guide-title">はじめての方へ — 操作の流れ</div>
-        <div class="fedex-guide-steps">
-          <div id="fedexGuideStep1" class="fedex-guide-step">① 出荷した商品のページ（eBayまたはメルカリ等仕入れ先）をタブで開く</div>
-          <div id="fedexGuideStep2" class="fedex-guide-step">② 下の「開いているページをAIで読み取り」で品目を追加（複数商品は繰り返す）</div>
-          <div id="fedexGuideStep3" class="fedex-guide-step">③ 運送状番号（12桁）を入力</div>
-          <div id="fedexGuideStep4" class="fedex-guide-step">④ 「フォームの質問を読み取る →」で次の画面へ</div>
-        </div>
-      </div>
+      <div class="fedex-step-header"><span class="fedex-step-badge">1</span>ステップ1: 基本情報を入力！</div>
+      <div class="fedex-step-desc">運送状番号（12桁）を入力してください。荷受人メールが不明な場合は / のままでOKです。</div>
 
       <div class="section-label">基本情報</div>
       <div class="form-group">
@@ -593,6 +586,9 @@
 
       <div class="section-label" style="margin-top:14px;">品目リスト</div>
       <div id="fedexItemList" class="tsca-product-list" style="display:none;"></div>
+
+      <div class="fedex-step-header"><span class="fedex-step-badge">2</span>ステップ2: 商品ページを読み取る！</div>
+      <div class="fedex-step-desc">出荷した商品のページ（eBayまたはメルカリ等仕入れ先）をタブで開いて下の「開いているページをAIで読み取り」ボタンを押すか、仕入れ元のURLを入力して「URLから読み取り」を押してください。</div>
 
       <button type="button" class="btn btn-ghost btn-sm" id="fedexAddFromPageBtn" style="width:100%;">📄 開いているページをAIで読み取り</button>
       <div class="fedex-url-row">
@@ -617,6 +613,9 @@
         <label for="fedexItemMaterials">材質と割合（英語）</label>
         <input type="text" id="fedexItemMaterials" placeholder="例: Cotton 100%">
       </div>
+      <div class="fedex-step-header"><span class="fedex-step-badge">3</span>ステップ3: 製造会社名と住所を決定！</div>
+      <div class="fedex-step-desc">AI候補・一覧・手入力で製造会社名を決め、住所を確定してください。</div>
+
       <div class="form-group">
         <label for="fedexItemMakerName">製造者の会社名（英語）</label>
         <input type="text" id="fedexItemMakerName" placeholder="例: XXX Manufacturing Co., Ltd.">
@@ -669,14 +668,21 @@
         </select>
       </div>
 
+      <div class="fedex-step-header"><span class="fedex-step-badge">4</span>ステップ4: 品目リストに追加！</div>
+      <div class="fedex-step-desc">追加の商品があれば、品目リストに追加の後、もう一度ステップ2〜3を繰り返してください。</div>
+
       <button type="button" class="btn btn-ghost btn-sm" id="fedexAddItemBtn">＋ 品目リストに追加</button>
       <button type="button" class="btn btn-ghost btn-sm" id="fedexCancelEditItemBtn" style="display:none;">キャンセル</button>
+
+      <div class="fedex-step-header"><span class="fedex-step-badge">5</span>ステップ5: フォームへ書き込む準備！</div>
+      <div class="fedex-step-desc">入力内容を確認後、FedExの入力フォームのタブを開いて、次の画面で「フォームの質問を読み取る」ボタンを押してください。</div>
 
       <button type="button" class="btn btn-primary" id="fedexGoToMappingBtn" style="margin-top:14px;">フォームの質問を読み取る →</button>
     </div>
 
     <!-- Sub: 対応表（マッピング） -->
     <div id="fedexSubMapping" class="fedex-sub" style="display:none;">
+      <div class="fedex-step-header"><span class="fedex-step-badge">5</span>ステップ5: フォームの質問を読み取る！</div>
       <div class="fedex-guide-box">
         FedExから届いたメールのフォームページをタブで開いた状態で、下の「フォームの質問を読み取る」を押してください。
       </div>

@@ -6334,35 +6334,7 @@ function fedexUpdateAddItemBtnLabel() {
   if (cancelBtn) cancelBtn.style.display = editing ? '' : 'none';
 }
 
-/** ①②③④の手順ガイド（fedexGuideBox）の現在地を強調表示する。
- *  品目0件なら①②、品目ありでAWB未入力なら③、両方揃えば④を強調する。 */
-function fedexUpdateGuideProgress() {
-  var step1 = document.getElementById('fedexGuideStep1');
-  var step2 = document.getElementById('fedexGuideStep2');
-  var step3 = document.getElementById('fedexGuideStep3');
-  var step4 = document.getElementById('fedexGuideStep4');
-  if (!step1 || !step2 || !step3 || !step4) return;
-
-  [step1, step2, step3, step4].forEach(function(el) {
-    el.classList.remove('fedex-guide-step-active');
-  });
-
-  var hasItems = state.fedex.items.length > 0;
-  var awbEl = document.getElementById('fedexAwb');
-  var awbComplete = !!(awbEl && awbEl.value && awbEl.value.length === 12);
-
-  if (!hasItems) {
-    step1.classList.add('fedex-guide-step-active');
-    step2.classList.add('fedex-guide-step-active');
-  } else if (!awbComplete) {
-    step3.classList.add('fedex-guide-step-active');
-  } else {
-    step4.classList.add('fedex-guide-step-active');
-  }
-}
-
 function fedexRenderItemList() {
-  fedexUpdateGuideProgress();
   var listEl = document.getElementById('fedexItemList');
   if (!listEl) return;
   var items = state.fedex.items;
@@ -6973,7 +6945,6 @@ window.addEventListener('load', function() {
 
   document.getElementById('fedexAwb').addEventListener('input', function() {
     this.value = this.value.replace(/[^0-9]/g, '').slice(0, 12);
-    fedexUpdateGuideProgress();
   });
 
   document.getElementById('fedexAddFromPageBtn').addEventListener('click', fedexRunAiFromActivePage);
@@ -7051,6 +7022,4 @@ window.addEventListener('load', function() {
       fedexItemsSub.addEventListener(evt, function() { state.fedex.completed = false; });
     });
   }
-
-  fedexUpdateGuideProgress();
 });
