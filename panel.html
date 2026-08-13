@@ -30,6 +30,7 @@
     <div id="watchAiHomeMsg" class="message" style="display:none;margin-top:6px;"></div>
     <button class="btn btn-fedex btn-sm" id="fedexHomeBtn" style="width:100%;margin-top:8px;">📦 FedEx貨物フォーム入力</button>
     <div id="fedexHomeMsg" class="message" style="display:none;margin-top:6px;"></div>
+    <button class="btn btn-gnr btn-sm" id="gnrHomeBtn" style="width:100%;margin-top:8px;">🛡 CPSC書類を作成する (Goods Not Registered)</button>
 
     <!-- マニュアルで探す -->
     <div class="section-label" style="margin-top:14px;">マニュアルでHSコードを探す</div>
@@ -1307,6 +1308,110 @@
     <div class="preview-label">内容プレビュー（印刷時はA4縦で出力されます）</div>
     <div class="worksheet-preview-wrapper">
       <table class="worksheet-table" id="watch_previewTable"></table>
+    </div>
+  </div>
+
+  <!-- ========== セクション: CPSC書類（Goods Not Registered / FedEx）（v1.7.0で追加） ========== -->
+  <div id="sectionGnr" class="section" style="display:none;">
+    <div class="panel-header">
+      <h1>CPSC書類を作る（Goods Not Registered）</h1>
+      <button class="link-btn" id="backFromGnr">← ホームへ</button>
+    </div>
+
+    <div class="disclaimer">
+      この書類は「Option A（この商品はCPSCの規制対象ではない）」の免責申告です。
+      12歳以下の子ども向け商品などCPSC規制対象商品にはこの書類は使えません（その場合はCPCが必要です）。
+      記載内容の正確性・提出の要否についての最終判断は輸出者ご本人の責任で行ってください。
+    </div>
+
+    <!-- Sub: 記入フォーム -->
+    <div id="gnrSubForm" class="gnr-sub" style="display:none;">
+      <div id="gnrTemplateBar" class="tsca-template-bar">
+        <div id="gnrTemplateStatusText" class="message success" style="display:block;"></div>
+        <div class="field-note" style="margin:6px 0 6px;">
+          様式PDFはこの拡張機能に同梱されています。別バージョンの様式を使いたい場合はここから差し替えできます（この端末（chrome.storage.local）にのみ保存され、外部には送信されません）。
+        </div>
+        <input type="file" id="gnrFileInput" accept="application/pdf">
+        <button class="btn btn-ghost btn-sm" id="gnrResetTemplateBtn" style="display:none;margin-top:6px;">同梱の様式に戻す</button>
+        <div id="gnrUploadMsg" class="message" style="display:none;margin-top:8px;"></div>
+      </div>
+
+      <div class="section-label">基本情報</div>
+      <div class="form-group">
+        <label for="gnrTracking">Tracking number（追跡番号・任意）</label>
+        <input type="text" id="gnrTracking" placeholder="未入力可（後で手書き）">
+      </div>
+      <div class="form-group">
+        <label for="gnrDate">Date</label>
+        <input type="text" id="gnrDate" placeholder="MM/DD/YYYY">
+      </div>
+      <div class="form-group">
+        <label for="gnrIntendedUse">Intended use code</label>
+        <input type="text" id="gnrIntendedUse" placeholder="130.000">
+        <div class="field-note">Option A（免責）運用の既定値は 130.000 です。変更する場合のみ書き換えてください。</div>
+      </div>
+
+      <div class="section-label" style="margin-top:14px;">商品説明（英語・1行）</div>
+      <div id="gnrAiResultBadge" class="ai-badge" style="display:none;">✨ <strong>AI入力補助</strong> — 内容を確認・修正してから進んでください</div>
+      <div class="form-group">
+        <label for="gnrDescription">Description</label>
+        <textarea id="gnrDescription" rows="3" placeholder='例: Used plastic kitchen storage container &quot;XYZ&quot;'></textarea>
+        <div class="field-note"><span id="gnrDescCount">0</span> / 120文字</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="gnrAiDescBtn">✨ AIで英語説明を生成</button>
+      <div id="gnrAiMsg" class="message" style="display:none;"></div>
+      <div class="field-note">AIに送信されるのは入力欄の商品情報のみです。氏名・連絡先・追跡番号などの個人情報は送信されず、PDF作成はすべてこの端末内で完結します。</div>
+
+      <div class="section-label" style="margin-top:14px;">Part V: Submitter情報</div>
+      <div class="form-group">
+        <label for="gnrCompanyName">35 Submitter company name</label>
+        <input type="text" id="gnrCompanyName">
+      </div>
+      <div class="form-group">
+        <label for="gnrSubmitterTitle">36 Submitter title</label>
+        <input type="text" id="gnrSubmitterTitle">
+      </div>
+      <div class="form-group">
+        <label for="gnrSubmitterName">37 Submitter name</label>
+        <input type="text" id="gnrSubmitterName">
+      </div>
+      <div class="form-group">
+        <label for="gnrSubmitterPhone">38 Submitter phone number</label>
+        <input type="text" id="gnrSubmitterPhone">
+      </div>
+      <div class="form-group">
+        <label for="gnrSubmitterEmail">39 Submitter email address</label>
+        <input type="email" id="gnrSubmitterEmail">
+      </div>
+      <div class="form-group">
+        <label for="gnrSubmitterDate">40 Date</label>
+        <input type="text" id="gnrSubmitterDate" placeholder="MM/DD/YYYY">
+      </div>
+
+      <button class="btn btn-primary" id="gnrGoToConfirmBtn" style="margin-top:10px;">確認画面へ進む →</button>
+    </div>
+
+    <!-- Sub: 確認画面 -->
+    <div id="gnrSubConfirm" class="gnr-sub" style="display:none;">
+      <div class="section-label">記入内容の確認</div>
+      <table class="tsca-confirm-table" id="gnrConfirmTable"></table>
+
+      <label class="tsca-confirm-check">
+        <input type="checkbox" id="gnrChildCheck">
+        この商品は12歳以下の子ども向けではありません（子ども向け商品にはこの書類を使えません。CPCが必要です）
+      </label>
+
+      <button class="btn btn-success" id="gnrGenerateBtn" style="margin-top:10px;width:100%;" disabled>PDFを生成してダウンロード</button>
+      <button class="btn btn-ghost btn-sm" id="gnrBackToFormBtn" style="margin-top:8px;">← 記入内容を修正</button>
+    </div>
+
+    <!-- Sub: 完了・提出案内 -->
+    <div id="gnrSubDone" class="gnr-sub" style="display:none;">
+      <div class="message success" style="display:block;" id="gnrDoneMsg"></div>
+      <div class="disclaimer" style="margin-top:10px;">
+        生成されたPDFの内容は必ずご自身で見直してください（未記入のPart II〜IVおよび署名欄はそのまま残っています）。最終的な提出判断は輸出者ご本人の責任です。
+      </div>
+      <button class="btn btn-ghost btn-sm" id="gnrStartOverBtn" style="margin-top:8px;">最初からやり直す</button>
     </div>
   </div>
 

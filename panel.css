@@ -1570,3 +1570,29 @@ select:focus {
 
 /* FedEx機能のダークモード個別指定は削除（パネルbodyは常にライト背景のため、
    背景だけ暗転すると文字が読めなくなる。ライト配色で固定する） */
+
+/* ===========================================
+   CPSC書類（Goods Not Registered / FedEx）機能（v1.7.0で追加）
+   共通クラス（.section / .panel-header / .btn* / .form-group / .message* /
+   .disclaimer / .section-label / .field-note / .ai-badge /
+   .tsca-template-bar / .tsca-confirm-table / .tsca-confirm-label /
+   .tsca-confirm-value / .tsca-confirm-check）は上記の既存定義をそのまま使用し、
+   ここではGNR機能固有の見た目のみを .gnr- プレフィックスで追加する。
+   注意: サブビューの切り替えクラスは既存の .tsca-sub を再利用しない
+   （showTscaSub()がdocument.querySelectorAll('.tsca-sub')で全要素を
+   一括トグルするため、同じクラス名を付けるとTSCA機能の表示切り替えに
+   このセクションの要素まで巻き込まれてしまう。FedEx機能が .fedex-sub を
+   独自定義しているのと同じ理由で .gnr-sub を独自定義する）。 */
+.btn-gnr {
+  background: #00838F;
+  color: #fff;
+}
+.btn-gnr:hover:not(:disabled) { background: #006C7A; }
+.btn-gnr:disabled { background: #bdbdbd; cursor: not-allowed; }
+
+.gnr-sub + .gnr-sub { margin-top: 4px; }
+
+.gnr-count-warn {
+  color: #c62828;
+  font-weight: bold;
+}

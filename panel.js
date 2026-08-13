@@ -76,7 +76,7 @@ function showSection(id) {
                   'sectionResult', 'sectionConfirm', 'sectionPrint',
                   'sectionCpscWiz', 'sectionCpscResult', 'sectionTsca',
                   'watch_sectionInput', 'watch_sectionWizard', 'watch_sectionPrint',
-                  'sectionFedex'];
+                  'sectionFedex', 'sectionGnr'];
   sections.forEach(function(sid) {
     var el = document.getElementById(sid);
     if (el) el.style.display = (sid === id) ? '' : 'none';
@@ -7020,6 +7020,686 @@ window.addEventListener('load', function() {
   if (fedexItemsSub) {
     ['input', 'change'].forEach(function(evt) {
       fedexItemsSub.addEventListener(evt, function() { state.fedex.completed = false; });
+    });
+  }
+});
+
+// =========================================================
+// CPSC書類（Goods Not Registered / FedEx）機能（v1.7.0で追加）
+//
+// FedExの「CPSC Goods Not Registered」様式（data/cpsc_gnr_template.pdf）に
+// Option A（この商品はCPSCの規制対象ではない・免責）＋ Intended use code 130.000 の
+// 固定運用で記入する。この様式はAcroFormフィールドを持つ記入可能PDFであり、
+// TSCA機能（座標へのテキスト焼き付け・フラット化）とは異なり、pdf-lib の
+// フォームAPI（form.getTextField/getCheckBox）で値を書き込む。flatten はしない
+// （受け取り側で編集可能なまま残す）。
+//
+// 記入するのはOption A運用に必要な項目のみ（Tracking number / date / Option A
+// チェック / Intended use code / Description / Part V Submitter情報）。
+// Part II〜IVおよび署名欄（41 = 'Text1'）、Option B、'undefined'（Noncommercial）は
+// 一切触らない。
+//
+// 既存機能（HSコード分析・TSCA・Watch Worksheet・FedEx貨物フォーム入力）の
+// コード・関数は一切変更していない。showSection()のsections配列への
+// 'sectionGnr'追加のみ、既存の統合パターンを踏襲している。
+//
+// 関数・IDの接頭辞は gnr / Gnr で統一する（既存の cpsc 接頭辞はCPSC判定
+// ウィザードが使用中のため、衝突を避けて gnr を使う）。
+// サブビューの切り替えクラスは既存の .tsca-sub を再利用しない（panel.cssの
+// コメント参照）。独自の .gnr-sub を使う。
+// =========================================================
+
+state.gnr = {
+  templateLoaded: false,
+  form: null,     // 確認画面へ進んだ時点のスナップショット
+  completed: false // PDFダウンロード成功済みフラグ。trueのまま「ホームへ」を押すとフォームを完全クリアする
+                    // （TSCA機能のstate.tsca.completedと同じ扱い）。
+};
+
+/** 様式PDF（gnr_fields.jsonで実測済み）のAcroFormフィールド名。1文字でも違うと
+ *  pdf-libのgetTextField/getCheckBoxがthrowするため、実測値と完全一致で書く。
+ *  'Option A  product is not regulated by this agency' は "A" と "product" の間に
+ *  半角スペースが2つ入っている（様式PDF側のフィールド名をそのまま実測した値）。 */
+var GNR_FIELD = {
+  tracking:    'Tracking number',
+  date:        'date',
+  optionA:     'Option A  product is not regulated by this agency',
+  intendedUse: 'Intended use code',
+  description: 'Description',
+  companyName: '35 Submitter company name',
+  title:       '36 Submitter title',
+  name:        '37 Submitter name',
+  phone:       '38 Submitter phone number',
+  email:       '39 Submitter email address',
+  date40:      '40 Date'
+};
+
+/** 様式差し替え時のバリデーション対象（この機能が実際に書き込む項目のうち、
+ *  差し替えPDFに無いと即座に書き込み失敗する主要フィールドのみを必須とする）。 */
+var GNR_REQUIRED_FIELD_NAMES = [
+  GNR_FIELD.tracking,
+  GNR_FIELD.optionA,
+  GNR_FIELD.intendedUse,
+  GNR_FIELD.description,
+  GNR_FIELD.companyName
+];
+
+var GNR_DESCRIPTION_MAX = 120; // Descriptionフィールド（1行）の上限文字数
+var GNR_DEFAULT_INTENDED_USE = '130.000'; // Option A免責運用の既定Intended use code
+
+// ---- base64 <-> ArrayBuffer ヘルパー（TSCA機能のtscaArrayBufferToBase64等と同じ処理を
+//      gnr接頭辞で独立して持つ。TSCA機能のコードには一切触れないため） ----
+function gnrArrayBufferToBase64(buffer) {
+  var bytes = new Uint8Array(buffer);
+  var chunkSize = 0x8000;
+  var chunks = [];
+  for (var i = 0; i < bytes.length; i += chunkSize) {
+    chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize)));
+  }
+  return btoa(chunks.join(''));
+}
+
+function gnrBase64ToUint8Array(base64) {
+  var binary = atob(base64);
+  var len = binary.length;
+  var bytes = new Uint8Array(len);
+  for (var i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function gnrFormatDateMMDDYYYY(d) {
+  var mm = d.getMonth() + 1;
+  var dd = d.getDate();
+  return (mm < 10 ? '0' + mm : String(mm)) + '/' + (dd < 10 ? '0' + dd : String(dd)) + '/' + d.getFullYear();
+}
+
+/** ファイル名用の生成日（YYYYMMDD）。追跡番号が未入力の場合のファイル名に使う。 */
+function gnrFormatDateYYYYMMDD(d) {
+  var mm = d.getMonth() + 1;
+  var dd = d.getDate();
+  return String(d.getFullYear()) + (mm < 10 ? '0' + mm : String(mm)) + (dd < 10 ? '0' + dd : String(dd));
+}
+
+/** サブビュー切り替え（#sectionGnr 内の .gnr-sub 要素のみ対象） */
+function showGnrSub(id) {
+  document.querySelectorAll('.gnr-sub').forEach(function(el) {
+    el.style.display = (el.id === id) ? '' : 'none';
+  });
+}
+
+/** 会社情報設定の「Name and Title」から氏名部分だけを取り出す（カンマ区切り想定）。
+ *  TSCA機能のtscaSplitNameTitle()と同じロジックだが、TSCA機能のコードを一切
+ *  変更しない・呼び出さないようgnr接頭辞で独立して持つ。 */
+function gnrSplitNameTitle(nameTitle) {
+  var s = (nameTitle || '').trim();
+  var idx = s.indexOf(',');
+  if (idx === -1) return { name: s, title: '' };
+  return { name: s.substring(0, idx).trim(), title: s.substring(idx + 1).trim() };
+}
+
+/** #tscaProductDesc等と同じ正規化: 連続空白を1つに、改行は1スペースへ潰して1行化する
+ *  （DescriptionフィールドはAcroForm上も1行のテキストフィールドのため）。 */
+function gnrNormalizeDescription(raw) {
+  return (raw || '').replace(/\s+/g, ' ').trim();
+}
+
+/** #sectionGnr を開く。gnrEnterForm()で記入フォームへ進む。 */
+function openGnrSection() {
+  showSection('sectionGnr');
+  gnrEnterForm();
+}
+
+/** 様式PDFの状態表示（差し替え済み／同梱）と差し替えリセットボタンの表示を更新する */
+function gnrUpdateTemplateStatus() {
+  chrome.storage.local.get(['_hsGnrTemplatePdf'], function(stored) {
+    var hasCustom = !!stored._hsGnrTemplatePdf;
+    state.gnr.templateLoaded = hasCustom;
+    var statusEl = document.getElementById('gnrTemplateStatusText');
+    var resetBtn = document.getElementById('gnrResetTemplateBtn');
+    if (statusEl) {
+      statusEl.textContent = hasCustom
+        ? '差し替えた様式を使用中です。'
+        : '同梱の様式（FedEx CPSC Goods Not Registered）を使用中です。';
+    }
+    if (resetBtn) resetBtn.style.display = hasCustom ? '' : 'none';
+  });
+}
+
+/** 様式PDFのバイト列を取得する。差し替え済みならchrome.storage.localから、
+ *  なければ同梱の data/cpsc_gnr_template.pdf を fetch(chrome.runtime.getURL(...)) で
+ *  読み込む（拡張機能内のローカルファイル読み込みであり、外部通信ではない）。
+ *  callback(bytes) または失敗時 callback(null, err) を呼ぶ。 */
+function gnrGetTemplateBytes(callback) {
+  chrome.storage.local.get(['_hsGnrTemplatePdf'], function(stored) {
+    if (stored._hsGnrTemplatePdf) {
+      callback(gnrBase64ToUint8Array(stored._hsGnrTemplatePdf));
+      return;
+    }
+    fetch(chrome.runtime.getURL('data/cpsc_gnr_template.pdf'))
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.arrayBuffer();
+      })
+      .then(function(buf) { callback(new Uint8Array(buf)); })
+      .catch(function(err) { callback(null, err); });
+  });
+}
+
+/** 差し替え候補PDFに、この機能が書き込む必須フィールド（GNR_REQUIRED_FIELD_NAMES）が
+ *  すべて存在するかを検証する。フォーム自体が読めない場合は全項目を不足扱いにする。
+ *  戻り値: 不足しているフィールド名の配列（問題なければ空配列）。 */
+function gnrMissingRequiredFields(doc) {
+  try {
+    var form = doc.getForm();
+    var names = form.getFields().map(function(f) { return f.getName(); });
+    return GNR_REQUIRED_FIELD_NAMES.filter(function(n) { return names.indexOf(n) === -1; });
+  } catch (e) {
+    return GNR_REQUIRED_FIELD_NAMES.slice();
+  }
+}
+
+/** ファイル選択時（差し替え）: PDFを読み込み、必須フィールドの存在を検証してから
+ *  base64でローカル保存する。必須フィールドが1つでも欠けていれば差し替えを拒否する
+ *  （黙って受け入れて後から書き込みエラーになるのを防ぐ）。 */
+function gnrHandleFileSelect(file) {
+  var msgEl = document.getElementById('gnrUploadMsg');
+  if (!file) return;
+  if (file.type && file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name || '')) {
+    showMessage(msgEl, 'error', 'PDFファイルを選択してください。');
+    return;
+  }
+  showMessage(msgEl, 'info', '読み込み中…');
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var arrayBuffer = e.target.result;
+    var base64 = gnrArrayBufferToBase64(arrayBuffer);
+
+    if (typeof PDFLib === 'undefined') {
+      showMessage(msgEl, 'error', 'PDF処理ライブラリの読み込みに失敗しました。拡張機能を再読み込みしてください。');
+      return;
+    }
+
+    PDFLib.PDFDocument.load(arrayBuffer).then(function(doc) {
+      var missing = gnrMissingRequiredFields(doc);
+      if (missing.length) {
+        showMessage(msgEl, 'error',
+          'このPDFには必須のフォーム項目が見つからないため、差し替えを中止しました。不足項目: ' + missing.join(' / '));
+        return;
+      }
+      chrome.storage.local.set({ _hsGnrTemplatePdf: base64 }, function() {
+        state.gnr.templateLoaded = true;
+        showMessage(msgEl, 'success', '差し替えた様式PDFを読み込みました（必須フォーム項目を確認しました）。');
+        gnrUpdateTemplateStatus();
+      });
+    }).catch(function(err) {
+      showMessage(msgEl, 'error', 'PDFの読み込みに失敗しました: ' + (err && err.message ? err.message : String(err)));
+    });
+  };
+  reader.onerror = function() {
+    showMessage(msgEl, 'error', 'ファイルの読み込みに失敗しました。');
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/** 差し替えた様式PDFを削除し、同梱の様式に戻す */
+function gnrResetTemplate() {
+  chrome.storage.local.remove(['_hsGnrTemplatePdf'], function() {
+    state.gnr.templateLoaded = false;
+    var fileInput = document.getElementById('gnrFileInput');
+    if (fileInput) fileInput.value = '';
+    var msgEl = document.getElementById('gnrUploadMsg');
+    if (msgEl) msgEl.style.display = 'none';
+    gnrUpdateTemplateStatus();
+  });
+}
+
+/** Description欄の文字数カウンタを更新する（正規化後の1行の長さで判定・表示する）。
+ *  上限超過時は赤字強調するが、この時点では入力をブロックしない
+ *  （ブロックは確認画面へ進む直前のgnrGoToConfirmで行う。黙って切り捨てない）。 */
+function gnrUpdateDescCount() {
+  var el = document.getElementById('gnrDescription');
+  var countEl = document.getElementById('gnrDescCount');
+  if (!el || !countEl) return;
+  var len = gnrNormalizeDescription(el.value).length;
+  countEl.textContent = String(len);
+  countEl.className = (len > GNR_DESCRIPTION_MAX) ? 'gnr-count-warn' : '';
+}
+
+/** AI入力補助バッジの表示切り替え */
+function showGnrAiResultBadge(show) {
+  var el = document.getElementById('gnrAiResultBadge');
+  if (el) el.style.display = show ? '' : 'none';
+}
+
+/** 記入フォーム表示。既定値・会社情報設定からのプリフィルを行う。
+ *  Description・Tracking numberの両方が空の場合のみ「新規ドキュメント」とみなし、
+ *  Date/Intended use code/Part V欄を初期値で入れ直す（TSCA機能のisFreshStart判定と
+ *  同じ考え方）。それ以外（編集途中で確認画面から戻ってきた等）は入力済みの値を
+ *  黙って上書きしない。 */
+function gnrEnterForm() {
+  gnrUpdateTemplateStatus();
+
+  // フォームに入った時点で「PDF完了」フラグを解除する（TSCA機能と同じ考え方）。
+  state.gnr.completed = false;
+
+  var descEl = document.getElementById('gnrDescription');
+  var trackingEl = document.getElementById('gnrTracking');
+  var isFreshStart = !descEl.value.trim() && !trackingEl.value.trim();
+
+  if (isFreshStart) {
+    var today = gnrFormatDateMMDDYYYY(new Date());
+    document.getElementById('gnrDate').value = today;
+    document.getElementById('gnrTracking').value = '';
+    document.getElementById('gnrIntendedUse').value = GNR_DEFAULT_INTENDED_USE;
+    document.getElementById('gnrDescription').value = '';
+
+    // Part Vのプリフィルは state.company（_hsCompany、設定画面で保存済み）から行う。
+    // TSCA機能のtscaEnterForm()と同じプリフィル元・同じ規則（Certifier系が未保存なら
+    // Name and Titleのカンマ区切りから氏名・肩書きを補う）を踏襲する。
+    var nt = gnrSplitNameTitle(state.company.nameTitle);
+    document.getElementById('gnrCompanyName').value    = state.company.name || '';
+    document.getElementById('gnrSubmitterName').value  = state.company.certifierName || nt.name || '';
+    document.getElementById('gnrSubmitterTitle').value = state.company.certifierTitle || nt.title || '';
+    document.getElementById('gnrSubmitterPhone').value = state.company.phone || '';
+    document.getElementById('gnrSubmitterEmail').value = state.company.email || '';
+    document.getElementById('gnrSubmitterDate').value  = today;
+  }
+
+  gnrUpdateDescCount();
+  showGnrAiResultBadge(false);
+  var aiMsg = document.getElementById('gnrAiMsg');
+  if (aiMsg) aiMsg.style.display = 'none';
+
+  showGnrSub('gnrSubForm');
+}
+
+// -------------------------------------------------------
+// CPSC書類（GNR）: AIでDescriptionを生成
+// -------------------------------------------------------
+
+/** AI生成の共通システムプロンプト（Descriptionフィールド専用・1行・120字以内）。
+ *  TSCA機能のtscaAiSystemPrompt()と条件（Used/New判定規則）の考え方を揃えつつ、
+ *  GNR様式のDescriptionは材質構成の記載欄ではない（1行の簡潔な商品説明欄）ため、
+ *  材質・割合の指示は含めない。 */
+function gnrAiSystemPrompt() {
+  return [
+    'You are helping prepare a US CPSC (Consumer Product Safety Commission) "Certificate of Compliance —',
+    'Goods Not Regulated" declaration for a shipment of used/secondhand consumer goods exported from Japan',
+    'to the US, filed under Option A (the product is not regulated by CPSC).',
+    'Given the product information below (it may be in Japanese), write ONE single-line factual English',
+    'product description for the "Description" field of the form.',
+    'Rules:',
+    '- ONE line only (no line breaks). NEVER exceed 120 characters in total, including spaces and punctuation.',
+    '  This is an ABSOLUTE requirement, not a target.',
+    '- Factual only. No exaggeration, no marketing or promotional language.',
+    '- Start with the condition word "Used" or "New":',
+    '  * Use "Used" if the source indicates a secondhand item (中古, used, pre-owned, 目立った傷や汚れなし, etc.).',
+    '  * Use "New" ONLY if the source clearly states the item is new/unused/unopened (新品, 未使用, 未開封, etc.).',
+    '  * If the condition cannot be determined, use "Used" (items handled by this tool come from Japanese',
+    '    secondhand marketplaces).',
+    '- Follow the condition word with a short factual item type and product name in quotes, for example:',
+    '  Used plastic kitchen storage container "XYZ"',
+    '  Used cotton tote bag',
+    '  New ceramic coffee mug "Sakura Blossom"',
+    '- Do NOT include brand names, model numbers, materials, or percentages. Keep it short and factual.',
+    'Return ONLY a JSON object with exactly the key "description". No markdown, no code fences, no explanation.',
+    'Example output: {"description": "Used plastic kitchen storage container \\"XYZ\\""}'
+  ].join('\n');
+}
+
+/** AI応答テキストから {description} を取り出す。コードフェンス・前後の説明文が
+ *  混ざっていても、最初の '{' から最後の '}' までをJSONとして解析する。
+ *  解析できない・descriptionが無い場合は Error を投げる。 */
+function gnrParseAiJson(content) {
+  var s = (content || '').trim();
+  s = s.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+  var start = s.indexOf('{');
+  var end = s.lastIndexOf('}');
+  if (start === -1 || end <= start) throw new Error('AIの応答がJSON形式ではありませんでした');
+  var obj;
+  try {
+    obj = JSON.parse(s.slice(start, end + 1));
+  } catch (e) {
+    throw new Error('AIの応答（JSON）を解析できませんでした');
+  }
+  var description = (typeof obj.description === 'string') ? gnrNormalizeDescription(obj.description) : '';
+  if (!description) throw new Error('AIの応答にdescriptionが含まれていませんでした');
+  return { description: description };
+}
+
+/** OpenAI Chat Completions を呼び、応答を gnrParseAiJson で {description} に変換して
+ *  cb(null, result) で返す。失敗（HTTP/空応答/不正JSON）は cb(err, null)。
+ *  エンドポイント・モデル・認証は既存のTSCA/FedEx機能と同じOpenAI利用パターンを踏襲する。 */
+function gnrCallAiJson(systemPrompt, userContent, cb) {
+  fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + state.openaiKey
+    },
+    body: JSON.stringify({
+      model: 'gpt-5.4',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent }
+      ],
+      max_completion_tokens: 200
+    })
+  })
+  .then(function(r) {
+    if (!r.ok) {
+      return r.json().then(function(errBody) {
+        throw new Error((errBody.error && errBody.error.message) || ('HTTP ' + r.status));
+      });
+    }
+    return r.json();
+  })
+  .then(function(data) {
+    var content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!content) throw new Error('AIからの応答が空でした');
+    cb(null, gnrParseAiJson(content));
+  })
+  .catch(function(e) {
+    cb(e, null);
+  });
+}
+
+/** 「✨ AIで英語説明を生成」ボタン: Description欄に入力済みの内容（日本語可）を
+ *  元情報として、AIで1行・120字以内の英語Descriptionを生成して同じ欄にセットする。
+ *  TSCA機能のtscaGenerateDescription()と同じ「入力欄の内容を元情報として使い、
+ *  結果を同じ欄に上書きする」パターンを踏襲する。 */
+function gnrGenerateDescription() {
+  var msgEl = document.getElementById('gnrAiMsg');
+  var btn = document.getElementById('gnrAiDescBtn');
+  var textEl = document.getElementById('gnrDescription');
+
+  if (!state.openaiKey) {
+    showMessage(msgEl, 'error', 'APIキーが未設定です。設定画面で OpenAI APIキーを入力してください。');
+    return;
+  }
+  var source = textEl.value.trim();
+  if (!source) {
+    showMessage(msgEl, 'error', '商品名など、元になる情報を先に入力してください（日本語可）。');
+    return;
+  }
+
+  btn.disabled = true;
+  showMessage(msgEl, 'info', '生成中…');
+
+  gnrCallAiJson(gnrAiSystemPrompt(), source, function(err, result) {
+    btn.disabled = false;
+    if (err || !result) {
+      showMessage(msgEl, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '不明なエラー'));
+      return;
+    }
+    textEl.value = result.description;
+    gnrUpdateDescCount();
+    showGnrAiResultBadge(true);
+    if (result.description.length > GNR_DESCRIPTION_MAX) {
+      showMessage(msgEl, 'error',
+        'AI生成結果が' + GNR_DESCRIPTION_MAX + '文字を超えています（現在' + result.description.length + '文字）。手動で短くしてください。');
+      return;
+    }
+    msgEl.style.display = 'none';
+  });
+}
+
+// -------------------------------------------------------
+// CPSC書類（GNR）: 確認画面・PDF生成
+// -------------------------------------------------------
+
+/** 記入フォームの内容を検証し、確認画面へ進む。
+ *  Description必須・120字以内、Submitter company name必須（GNR_REQUIRED_FIELD_NAMESの
+ *  うちユーザーが直接入力する項目）をここでチェックする。黙って切り捨てたり
+ *  書き換えたりはせず、問題があればアラートで知らせて止める。 */
+function gnrGoToConfirm() {
+  var tracking        = document.getElementById('gnrTracking').value.trim();
+  var date            = document.getElementById('gnrDate').value.trim();
+  var intendedUse     = document.getElementById('gnrIntendedUse').value.trim() || GNR_DEFAULT_INTENDED_USE;
+  var description     = gnrNormalizeDescription(document.getElementById('gnrDescription').value);
+  var companyName     = document.getElementById('gnrCompanyName').value.trim();
+  var submitterTitle  = document.getElementById('gnrSubmitterTitle').value.trim();
+  var submitterName   = document.getElementById('gnrSubmitterName').value.trim();
+  var submitterPhone  = document.getElementById('gnrSubmitterPhone').value.trim();
+  var submitterEmail  = document.getElementById('gnrSubmitterEmail').value.trim();
+  var submitterDate   = document.getElementById('gnrSubmitterDate').value.trim();
+
+  if (!description) {
+    alert('Description（商品説明）を入力してください。');
+    return;
+  }
+  if (description.length > GNR_DESCRIPTION_MAX) {
+    alert('Descriptionが' + GNR_DESCRIPTION_MAX + '文字を超えています（現在' + description.length + '文字）。短くしてください。');
+    return;
+  }
+  if (!companyName) {
+    alert('35 Submitter company name を入力してください。');
+    return;
+  }
+
+  document.getElementById('gnrIntendedUse').value = intendedUse;
+
+  var f = {
+    tracking: tracking,
+    date: date,
+    intendedUse: intendedUse,
+    description: description,
+    companyName: companyName,
+    submitterTitle: submitterTitle,
+    submitterName: submitterName,
+    submitterPhone: submitterPhone,
+    submitterEmail: submitterEmail,
+    submitterDate: submitterDate
+  };
+
+  gnrProceedToConfirm(f);
+}
+
+/** 検証通過後、確認画面を構築して表示する。 */
+function gnrProceedToConfirm(f) {
+  state.gnr.form = f;
+
+  var rows = [
+    ['Tracking number', f.tracking || '（未入力・後で手書き）'],
+    ['Date', f.date || '(未入力)'],
+    ['Intended use code', f.intendedUse],
+    ['Description', f.description],
+    ['Option A', 'product is not regulated by this agency（チェックします）'],
+    ['35 Submitter company name', f.companyName],
+    ['36 Submitter title', f.submitterTitle || '(未入力・任意)'],
+    ['37 Submitter name', f.submitterName || '(未入力・任意)'],
+    ['38 Submitter phone number', f.submitterPhone || '(未入力・任意)'],
+    ['39 Submitter email address', f.submitterEmail || '(未入力・任意)'],
+    ['40 Date', f.submitterDate || '(未入力・任意)']
+  ];
+
+  var table = document.getElementById('gnrConfirmTable');
+  table.innerHTML = '';
+  rows.forEach(function(r) {
+    var tr = document.createElement('tr');
+    var tdL = document.createElement('td');
+    tdL.className = 'tsca-confirm-label';
+    tdL.textContent = r[0];
+    var tdV = document.createElement('td');
+    tdV.className = 'tsca-confirm-value';
+    tdV.textContent = r[1];
+    tr.appendChild(tdL);
+    tr.appendChild(tdV);
+    table.appendChild(tr);
+  });
+
+  var checkEl = document.getElementById('gnrChildCheck');
+  checkEl.checked = false;
+  document.getElementById('gnrGenerateBtn').disabled = true;
+
+  showGnrSub('gnrSubConfirm');
+}
+
+/** PDF生成本体。AcroFormを持つ記入可能PDF（gnrGetTemplateBytesで取得した様式）に
+ *  pdf-libのフォームAPIで値を書き込む。TSCA機能とは異なりflattenはしない
+ *  （受け取り側で編集可能なまま残す）。Option Aチェックボックスのみチェックし、
+ *  Option B・undefined（Noncommercial）・Part II〜IV・署名欄（Text1）は一切触らない。 */
+function gnrGeneratePdf() {
+  // 子ども向け安全ゲートの再検証（独立レビュー指摘への対応）。
+  // gnrChildCheckのdisabled制御（change時にgnrGenerateBtnのdisabledを切り替える処理）は
+  // UI操作を通じてのみ働くため、DevToolsでdisabled属性を外す・この関数を直接呼び出す等で
+  // バイパスされうる。PDF生成処理（テンプレート読み込み・フォーム書き込み）に入る前に
+  // 必ずチェック状態を再検証し、未チェック・要素が取得できない場合のいずれも
+  // 安全側（生成を中断）に倒す。既存のGNR機能内のブロッキングエラー表示（alert）と
+  // 同じ方式で知らせる。
+  var childCheckEl = document.getElementById('gnrChildCheck');
+  if (!childCheckEl || !childCheckEl.checked) {
+    alert('「この商品は12歳以下の子ども向けではありません」のチェックが確認できません。確認画面でチェックを入れてから生成してください。');
+    return;
+  }
+
+  var btn = document.getElementById('gnrGenerateBtn');
+  var f = state.gnr.form;
+  if (!f) { alert('入力内容が見つかりません。フォームからやり直してください。'); return; }
+  if (typeof PDFLib === 'undefined') {
+    alert('PDF処理ライブラリの読み込みに失敗しました。拡張機能を再読み込みしてください。');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '生成中…';
+
+  gnrGetTemplateBytes(function(templateBytes, err) {
+    if (!templateBytes) {
+      alert('様式PDFの読み込みに失敗しました: ' + (err && err.message ? err.message : String(err || '')));
+      btn.disabled = false;
+      btn.textContent = 'PDFを生成してダウンロード';
+      return;
+    }
+
+    PDFLib.PDFDocument.load(templateBytes).then(function(doc) {
+      var form = doc.getForm();
+
+      function setText(fieldName, value) {
+        if (!value) return;
+        var field = form.getTextField(fieldName);
+        field.setText(value);
+      }
+
+      setText(GNR_FIELD.tracking,    f.tracking);
+      setText(GNR_FIELD.date,        f.date);
+      setText(GNR_FIELD.intendedUse, f.intendedUse);
+      setText(GNR_FIELD.description, f.description);
+      setText(GNR_FIELD.companyName, f.companyName);
+      setText(GNR_FIELD.title,       f.submitterTitle);
+      setText(GNR_FIELD.name,        f.submitterName);
+      setText(GNR_FIELD.phone,       f.submitterPhone);
+      setText(GNR_FIELD.email,       f.submitterEmail);
+      setText(GNR_FIELD.date40,      f.submitterDate);
+
+      // Option A（免責）のみチェックする。Option B・undefined（Noncommercial）は
+      // 触らない（デフォルトのOffのまま）。
+      form.getCheckBox(GNR_FIELD.optionA).check();
+
+      // flattenはしない。updateFieldAppearances()で見た目（テキスト表示）を
+      // 明示的に確定させる（doc.save()も既定でこれを行うが、仕様に沿って明示的に呼ぶ）。
+      form.updateFieldAppearances();
+
+      return doc.save();
+    }).then(function(bytes) {
+      var blob = new Blob([bytes], { type: 'application/pdf' });
+      var url = URL.createObjectURL(blob);
+      var safeTracking = f.tracking ? f.tracking.replace(/[^0-9A-Za-z-]/g, '') : '';
+      var filename = safeTracking
+        ? ('CPSC_GNR_' + safeTracking + '.pdf')
+        : ('CPSC_GNR_' + gnrFormatDateYYYYMMDD(new Date()) + '.pdf');
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function() { URL.revokeObjectURL(url); }, 4000);
+
+      btn.disabled = false;
+      btn.textContent = 'PDFを生成してダウンロード';
+      document.getElementById('gnrDoneMsg').textContent = filename + ' をダウンロードしました。';
+      state.gnr.completed = true;
+      showGnrSub('gnrSubDone');
+    }).catch(function(err) {
+      console.error('GNR PDF generation error', err);
+      alert('PDFの生成に失敗しました: ' + (err && err.message ? err.message : String(err)));
+      btn.disabled = false;
+      btn.textContent = 'PDFを生成してダウンロード';
+    });
+  });
+}
+
+/** GNR機能を初期状態に戻してホームへ */
+function gnrStartOver() {
+  state.gnr.form = null;
+  state.gnr.completed = false;
+  showSection('sectionHome');
+}
+
+/** PDFダウンロード完了後に「ホームへ」を選んだときの完全クリア。
+ *  Tracking number・Descriptionをクリアすることで、次回 gnrEnterForm() が
+ *  isFreshStartと判定し、Date・Intended use code・Part V欄を設定から再ロード・
+ *  再初期化する（TSCA機能のtscaClearAfterComplete()と同じ考え方）。 */
+function gnrClearAfterComplete() {
+  state.gnr.form = null;
+  state.gnr.completed = false;
+
+  var trackingEl = document.getElementById('gnrTracking');
+  if (trackingEl) trackingEl.value = '';
+  var descEl = document.getElementById('gnrDescription');
+  if (descEl) descEl.value = '';
+  var checkEl = document.getElementById('gnrChildCheck');
+  if (checkEl) checkEl.checked = false;
+  var genBtn = document.getElementById('gnrGenerateBtn');
+  if (genBtn) genBtn.disabled = true;
+  gnrUpdateDescCount();
+}
+
+// -------------------------------------------------------
+// CPSC書類（GNR）機能: イベント登録
+// -------------------------------------------------------
+window.addEventListener('load', function() {
+  document.getElementById('gnrHomeBtn').addEventListener('click', openGnrSection);
+
+  document.getElementById('backFromGnr').addEventListener('click', function() {
+    // PDFダウンロード完了後（state.gnr.completed）に「ホームへ」を選んだ場合だけ、
+    // 前回値が次回に残らないようフォームを完全クリアする（TSCA機能と同じ考え方）。
+    // 作業途中（PDF未生成、またはPDF生成後に編集を再開してフラグが解除された状態）は
+    // 従来どおり入力保持。
+    if (state.gnr.completed) gnrClearAfterComplete();
+    showSection('sectionHome');
+  });
+
+  document.getElementById('gnrFileInput').addEventListener('change', function(e) {
+    var file = e.target.files && e.target.files[0];
+    gnrHandleFileSelect(file);
+  });
+  document.getElementById('gnrResetTemplateBtn').addEventListener('click', gnrResetTemplate);
+
+  document.getElementById('gnrDescription').addEventListener('input', gnrUpdateDescCount);
+  document.getElementById('gnrAiDescBtn').addEventListener('click', gnrGenerateDescription);
+
+  document.getElementById('gnrGoToConfirmBtn').addEventListener('click', gnrGoToConfirm);
+
+  document.getElementById('gnrChildCheck').addEventListener('change', function() {
+    document.getElementById('gnrGenerateBtn').disabled = !this.checked;
+  });
+  document.getElementById('gnrGenerateBtn').addEventListener('click', gnrGeneratePdf);
+  document.getElementById('gnrBackToFormBtn').addEventListener('click', function() {
+    showGnrSub('gnrSubForm');
+  });
+
+  document.getElementById('gnrStartOverBtn').addEventListener('click', gnrStartOver);
+
+  // フォーム内のどれかの欄を編集した時点でも「PDF完了」フラグを解除する
+  // （TSCA機能の同様の保険と同じ考え方。編集済みの内容が「ホームへ」で黙って
+  // クリアされる事故を防ぐ）。
+  var gnrFormSub = document.getElementById('gnrSubForm');
+  if (gnrFormSub) {
+    ['input', 'change'].forEach(function(evt) {
+      gnrFormSub.addEventListener(evt, function() { state.gnr.completed = false; });
     });
   }
 });
