@@ -7085,8 +7085,27 @@ var GNR_REQUIRED_FIELD_NAMES = [
   GNR_FIELD.companyName
 ];
 
-var GNR_DESCRIPTION_MAX = 120; // Descriptionフィールド（1行）の上限文字数
+/** Description欄の入力中カウンタ用の目安文字数（2026-08-13 実機テストで発覚した不具合
+ *  への対応）。旧実装は様式の欄の実寸を無視した固定120字上限だったが、実際の様式PDFの
+ *  Description欄は247.9x15.0pt・DA既定12ptで、12ptでは約40字、フォントサイズを
+ *  下限（GNR_FIT_MIN_FONT_SIZE=8pt）まで縮小しても英語の一般的な文章で約70字までしか
+ *  収まらないことを pdf-lib の font.widthOfTextAtSize で実測して確認した。この定数は
+ *  入力中カウンタの「目安」表示にのみ使う（タイピングを止めない）。実際に欄へ収まるかの
+ *  最終判定・生成ブロックは gnrGeneratePdf() が実際に読み込んだ様式PDFの欄の実寸を使って
+ *  行う（gnrFitFontSize）ため、差し替え様式で欄の幅が違っても正しく判定される。 */
+var GNR_DESCRIPTION_GUIDE_MAX = 70;
 var GNR_DEFAULT_INTENDED_USE = '130.000'; // Option A免責運用の既定Intended use code
+
+/** テキスト欄の実測フィット処理（2026-08-13 実機テストで発覚した「文字の見切れ」への
+ *  対応）。様式の各テキスト欄のDA既定フォントサイズ(12pt)は欄の実寸に対して大きすぎる
+ *  場合があり、そのまま書き込むと長い値が欄からはみ出す。GNR_FIT_MAX_FONT_SIZEを上限、
+ *  GNR_FIT_MIN_FONT_SIZEを下限として、GNR_FIT_FONT_STEP刻みで欄の幅に収まる最大サイズを
+ *  実測（font.widthOfTextAtSize）して探す。下限でも収まらない場合は黙って切り捨てず、
+ *  gnrGeneratePdf()でエラーにして生成を止める（既存の「黙って切らない」方針を踏襲）。 */
+var GNR_FIT_MAX_FONT_SIZE = 12; // 様式のDA既定値と同じ上限
+var GNR_FIT_MIN_FONT_SIZE = 8;  // これ未満は可読性が失われるため下限とする
+var GNR_FIT_FONT_STEP = 0.5;
+var GNR_FIT_PADDING_X = 4; // 欄の左右内側余白（Acrobat既定の内側マージン相当の安全マージン）
 
 // ---- base64 <-> ArrayBuffer ヘルパー（TSCA機能のtscaArrayBufferToBase64等と同じ処理を
 //      gnr接頭辞で独立して持つ。TSCA機能のコードには一切触れないため） ----
@@ -7256,15 +7275,17 @@ function gnrResetTemplate() {
 }
 
 /** Description欄の文字数カウンタを更新する（正規化後の1行の長さで判定・表示する）。
- *  上限超過時は赤字強調するが、この時点では入力をブロックしない
- *  （ブロックは確認画面へ進む直前のgnrGoToConfirmで行う。黙って切り捨てない）。 */
+ *  GNR_DESCRIPTION_GUIDE_MAXは様式の欄の実寸から実測した「目安」であり、超過時は
+ *  赤字強調するが、この時点では入力をブロックしない（黙って切り捨てない）。
+ *  実際に欄へ収まるかどうかの最終判定・生成ブロックは、実際に読み込んだ様式PDFの
+ *  欄の実寸を使って gnrGeneratePdf() が行う（差し替え様式にも正しく対応するため）。 */
 function gnrUpdateDescCount() {
   var el = document.getElementById('gnrDescription');
   var countEl = document.getElementById('gnrDescCount');
   if (!el || !countEl) return;
   var len = gnrNormalizeDescription(el.value).length;
   countEl.textContent = String(len);
-  countEl.className = (len > GNR_DESCRIPTION_MAX) ? 'gnr-count-warn' : '';
+  countEl.className = (len > GNR_DESCRIPTION_GUIDE_MAX) ? 'gnr-count-warn' : '';
 }
 
 /** AI入力補助バッジの表示切り替え */
@@ -7437,9 +7458,10 @@ function gnrGenerateDescription() {
     textEl.value = result.description;
     gnrUpdateDescCount();
     showGnrAiResultBadge(true);
-    if (result.description.length > GNR_DESCRIPTION_MAX) {
-      showMessage(msgEl, 'error',
-        'AI生成結果が' + GNR_DESCRIPTION_MAX + '文字を超えています（現在' + result.description.length + '文字）。手動で短くしてください。');
+    if (result.description.length > GNR_DESCRIPTION_GUIDE_MAX) {
+      showMessage(msgEl, 'warn',
+        'AI生成結果が目安（約' + GNR_DESCRIPTION_GUIDE_MAX + '文字）を超えています（現在' + result.description.length +
+        '文字）。欄に収まらない場合はPDF生成時にお知らせします。必要なら手動で短くしてください。');
       return;
     }
     msgEl.style.display = 'none';
@@ -7451,9 +7473,14 @@ function gnrGenerateDescription() {
 // -------------------------------------------------------
 
 /** 記入フォームの内容を検証し、確認画面へ進む。
- *  Description必須・120字以内、Submitter company name必須（GNR_REQUIRED_FIELD_NAMESの
- *  うちユーザーが直接入力する項目）をここでチェックする。黙って切り捨てたり
- *  書き換えたりはせず、問題があればアラートで知らせて止める。 */
+ *  Description必須、Submitter company name必須（GNR_REQUIRED_FIELD_NAMESのうち
+ *  ユーザーが直接入力する項目）をここでチェックする。黙って切り捨てたり書き換えたりはせず、
+ *  問題があればアラートで知らせて止める。
+ *  Descriptionの文字数上限チェックはここでは行わない（2026-08-13
+ *  実機テストで発覚した不具合対応）。様式の欄に収まるかどうかは実際に読み込んだ
+ *  様式PDFの欄の実寸とフォントサイズの実測でしか正確に判定できないため、
+ *  実測フィット処理とあわせてgnrGeneratePdf()で最終判定・生成ブロックを行う
+ *  （差し替え様式でも欄の実寸を正しく使って判定するため）。 */
 function gnrGoToConfirm() {
   var tracking        = document.getElementById('gnrTracking').value.trim();
   var date            = document.getElementById('gnrDate').value.trim();
@@ -7468,10 +7495,6 @@ function gnrGoToConfirm() {
 
   if (!description) {
     alert('Description（商品説明）を入力してください。');
-    return;
-  }
-  if (description.length > GNR_DESCRIPTION_MAX) {
-    alert('Descriptionが' + GNR_DESCRIPTION_MAX + '文字を超えています（現在' + description.length + '文字）。短くしてください。');
     return;
   }
   if (!companyName) {
@@ -7537,6 +7560,114 @@ function gnrProceedToConfirm(f) {
   showGnrSub('gnrSubConfirm');
 }
 
+// -------------------------------------------------------
+// CPSC書類（GNR）: テキスト欄の実測フィット処理
+// -------------------------------------------------------
+
+/** テキストフィールドの実際の欄サイズ（幅、pt）を取得する。GNR様式は1フィールド=
+ *  1ウィジェット前提。取得できない場合はnull。 */
+function gnrGetFieldWidth(field) {
+  var widgets = field.acroField.getWidgets();
+  if (!widgets || !widgets.length) return null;
+  return widgets[0].getRectangle().width;
+}
+
+/** text が maxWidth に収まる最大フォントサイズ（GNR_FIT_MAX_FONT_SIZE以下・
+ *  GNR_FIT_MIN_FONT_SIZE以上、GNR_FIT_FONT_STEP刻み）を返す。収まらなければnull。
+ *  空文字は描画されないため常にGNR_FIT_MAX_FONT_SIZEを返す。 */
+function gnrFitFontSize(font, text, maxWidth) {
+  if (!text) return GNR_FIT_MAX_FONT_SIZE;
+  for (var size = GNR_FIT_MAX_FONT_SIZE; size >= GNR_FIT_MIN_FONT_SIZE; size -= GNR_FIT_FONT_STEP) {
+    if (font.widthOfTextAtSize(text, size) <= maxWidth) return size;
+  }
+  return null;
+}
+
+/** GNR_FIT_MIN_FONT_SIZEでも欄に収まらない場合の「あと何文字削る必要があるか」の目安を
+ *  返す。文字幅は文字種によって異なり均一ではないため厳密な文字数ではなく、
+ *  下限サイズでの平均文字幅から概算した目安値（端数切り上げ・最低1）。 */
+function gnrEstimateCharsOver(font, text, maxWidth) {
+  var widthAtMin = font.widthOfTextAtSize(text, GNR_FIT_MIN_FONT_SIZE);
+  var avgCharWidth = widthAtMin / text.length;
+  var overWidth = widthAtMin - maxWidth;
+  return Math.max(1, Math.ceil(overWidth / avgCharWidth));
+}
+
+// -------------------------------------------------------
+// CPSC書類（GNR）: 様式PDFの構造上の欠陥への対策
+//
+// 2026-08-13 実機テストで発覚: 同梱の様式PDF（data/cpsc_gnr_template.pdf）は、
+// AcroForm/Fieldsに登録されているフィールドオブジェクトと、ページのAnnotsに実際に
+// 載っている（＝ビューアが描画・値の表示に使う）ウィジェット注釈オブジェクトが、
+// 同じフィールド名を持つ「別オブジェクト」になっている（本来は同一オブジェクトの
+// はずだが、テンプレートの作成過程で複製されたとみられる。pypdfで両オブジェクトの
+// 間接参照番号が異なることを実測確認済み。全フィールドで同様の構造）。
+// pdf-libの高レベルAPI（textField.setText/setFontSize、checkbox.check()、
+// form.updateFieldAppearances()）はいずれも acroField.getWidgets() が返す
+// AcroForm側のオブジェクトにしか /V・/AS・/AP を書き込まないため、ページのAnnotsに
+// 実際に載っている側がその値のまま（テキスト欄は/Vが空、チェックボックスは/ASが/Off）
+// に取り残され、ビューア（特にAnnotsを厳密に辿って描画するpoppler/pdftoppm）で
+// 正しく表示されない（テキストが表示されない・チェックマークが表示されない）。
+// 以下の2関数は、高レベルAPIがAcroForm側に書き込んだ最終結果を、ページのAnnotsに
+// 実際に載っている同名オブジェクトへ低レベルAPIで直接コピーする対策。
+// -------------------------------------------------------
+
+/** チェックボックスの/AS（表示状態）と/Vを、ページのAnnotsに実際に載っている
+ *  同名ウィジェット注釈へ直接書き込む。チェックボックスの/AP（On/Offの見た目）は
+ *  様式にもともと共有オブジェクトとして焼き込まれており書き換え不要なため触らない。 */
+function gnrForceCheckboxAppearanceState(doc, fieldName, stateValue) {
+  var target = PDFLib.PDFName.of(stateValue);
+  var tKey = PDFLib.PDFName.of('T');
+  var asKey = PDFLib.PDFName.of('AS');
+  var vKey = PDFLib.PDFName.of('V');
+  for (var pi = 0; pi < doc.getPageCount(); pi++) {
+    var page = doc.getPage(pi);
+    var annots = page.node.Annots();
+    if (!annots) continue;
+    for (var i = 0, n = annots.size(); i < n; i++) {
+      var annotDict = doc.context.lookup(annots.get(i));
+      if (!annotDict || typeof annotDict.get !== 'function') continue;
+      var t = annotDict.get(tKey);
+      if (t && typeof t.decodeText === 'function' && t.decodeText() === fieldName) {
+        annotDict.set(asKey, target);
+        annotDict.set(vKey, target);
+      }
+    }
+  }
+}
+
+/** テキストフィールドのAcroForm側オブジェクトに書き込まれた/V（入力値）・/AP（生成された
+ *  見た目）を、ページのAnnotsに実際に載っている同名オブジェクトへコピーする。 */
+function gnrSyncTextFieldToPageAnnots(doc, field) {
+  var widgets = field.acroField.getWidgets();
+  if (!widgets || !widgets.length) return;
+  var sourceDict = widgets[0].dict;
+  var fieldName = field.getName();
+  var vKey = PDFLib.PDFName.of('V');
+  var apKey = PDFLib.PDFName.of('AP');
+  var tKey = PDFLib.PDFName.of('T');
+
+  var v = sourceDict.get(vKey);
+  var ap = sourceDict.get(apKey);
+
+  for (var pi = 0; pi < doc.getPageCount(); pi++) {
+    var page = doc.getPage(pi);
+    var annots = page.node.Annots();
+    if (!annots) continue;
+    for (var i = 0, n = annots.size(); i < n; i++) {
+      var annotDict = doc.context.lookup(annots.get(i));
+      if (!annotDict || typeof annotDict.get !== 'function') continue;
+      if (annotDict === sourceDict) continue; // 分裂していない（同一オブジェクト）場合は何もしない
+      var t = annotDict.get(tKey);
+      if (t && typeof t.decodeText === 'function' && t.decodeText() === fieldName) {
+        if (v !== undefined) annotDict.set(vKey, v);
+        else annotDict.delete(vKey);
+        if (ap !== undefined) annotDict.set(apKey, ap);
+      }
+    }
+  }
+}
+
 /** PDF生成本体。AcroFormを持つ記入可能PDF（gnrGetTemplateBytesで取得した様式）に
  *  pdf-libのフォームAPIで値を書き込む。TSCA機能とは異なりflattenはしない
  *  （受け取り側で編集可能なまま残す）。Option Aチェックボックスのみチェックし、
@@ -7575,34 +7706,86 @@ function gnrGeneratePdf() {
     }
 
     PDFLib.PDFDocument.load(templateBytes).then(function(doc) {
-      var form = doc.getForm();
+      return doc.embedFont(PDFLib.StandardFonts.Helvetica).then(function(helv) {
+        var form = doc.getForm();
 
-      function setText(fieldName, value) {
-        if (!value) return;
-        var field = form.getTextField(fieldName);
-        field.setText(value);
-      }
+        var fieldPlan = [
+          { name: GNR_FIELD.tracking,    value: f.tracking,        label: 'Tracking number' },
+          { name: GNR_FIELD.date,        value: f.date,            label: 'Date' },
+          { name: GNR_FIELD.intendedUse, value: f.intendedUse,     label: 'Intended use code' },
+          { name: GNR_FIELD.description, value: f.description,     label: 'Description' },
+          { name: GNR_FIELD.companyName, value: f.companyName,     label: '35 Submitter company name' },
+          { name: GNR_FIELD.title,       value: f.submitterTitle,  label: '36 Submitter title' },
+          { name: GNR_FIELD.name,        value: f.submitterName,   label: '37 Submitter name' },
+          { name: GNR_FIELD.phone,       value: f.submitterPhone,  label: '38 Submitter phone number' },
+          { name: GNR_FIELD.email,       value: f.submitterEmail,  label: '39 Submitter email address' },
+          { name: GNR_FIELD.date40,      value: f.submitterDate,   label: '40 Date' }
+        ];
 
-      setText(GNR_FIELD.tracking,    f.tracking);
-      setText(GNR_FIELD.date,        f.date);
-      setText(GNR_FIELD.intendedUse, f.intendedUse);
-      setText(GNR_FIELD.description, f.description);
-      setText(GNR_FIELD.companyName, f.companyName);
-      setText(GNR_FIELD.title,       f.submitterTitle);
-      setText(GNR_FIELD.name,        f.submitterName);
-      setText(GNR_FIELD.phone,       f.submitterPhone);
-      setText(GNR_FIELD.email,       f.submitterEmail);
-      setText(GNR_FIELD.date40,      f.submitterDate);
+        // 1) 各欄が実際に収まるフォントサイズを実測で求める（2026-08-13 実機テストで
+        //    発覚した「文字の見切れ」への対応）。欄の実寸はテンプレート（同梱or差し替え）
+        //    から実際に読み取るため、差し替え様式で欄の幅が違っても正しく判定される。
+        //    GNR_FIT_MIN_FONT_SIZEでも収まらない場合は黙って切り捨てず、
+        //    エラーメッセージ（あと何文字削る必要があるかの目安つき）でPDF生成を止める。
+        var errors = [];
+        var plan = [];
+        fieldPlan.forEach(function(item) {
+          if (!item.value) return;
+          var field = form.getTextField(item.name);
+          var fieldWidth = gnrGetFieldWidth(field);
+          var maxWidth = fieldWidth != null ? Math.max(fieldWidth - GNR_FIT_PADDING_X, 1) : null;
+          var size = maxWidth != null ? gnrFitFontSize(helv, item.value, maxWidth) : GNR_FIT_MAX_FONT_SIZE;
+          if (size == null) {
+            var charsOver = gnrEstimateCharsOver(helv, item.value, maxWidth);
+            errors.push(item.label + ' が長すぎて欄に収まりません（' + GNR_FIT_MIN_FONT_SIZE +
+              'ptまで縮小しても収まりません。目安として約' + charsOver + '文字短くしてください）。');
+            return;
+          }
+          plan.push({ field: field, value: item.value, size: size });
+        });
+        if (errors.length) {
+          throw new Error(errors.join('\n'));
+        }
 
-      // Option A（免責）のみチェックする。Option B・undefined（Noncommercial）は
-      // 触らない（デフォルトのOffのまま）。
-      form.getCheckBox(GNR_FIELD.optionA).check();
+        // 2) フィット判定を通過した欄のみ書き込む。setFontSize()は/DAのフォントサイズを
+        //    書き換えるだけで見た目はまだ再生成されない（setText()も同様、値の代入のみ）。
+        //    実際の見た目（グリフの描画）は後段のform.updateFieldAppearances()で
+        //    まとめて生成されるため、この順序（先にsetFontSize、次にsetText）で問題ない。
+        plan.forEach(function(item) {
+          item.field.setFontSize(item.size);
+          item.field.setText(item.value);
+        });
 
-      // flattenはしない。updateFieldAppearances()で見た目（テキスト表示）を
-      // 明示的に確定させる（doc.save()も既定でこれを行うが、仕様に沿って明示的に呼ぶ）。
-      form.updateFieldAppearances();
+        // Option A（免責）のみチェックする。Option B・undefined（Noncommercial）は
+        // 触らない（デフォルトのOffのまま）。
+        form.getCheckBox(GNR_FIELD.optionA).check();
 
-      return doc.save();
+        // flattenはしない。updateFieldAppearances()でテキスト欄の見た目
+        // （フォントサイズ変更後の再描画）を確定させる。
+        form.updateFieldAppearances();
+
+        // 3) 様式PDFの構造上の欠陥への対策（2026-08-13 実機テストで発見。詳細は
+        //    gnrForceCheckboxAppearanceState/gnrSyncTextFieldToPageAnnotsの
+        //    コメント参照）。ここまでの高レベルAPIでの書き込みはAcroForm/Fields側の
+        //    オブジェクトにしか反映されないため、ページのAnnotsに実際に載っている
+        //    （＝ビューアが描画に使う）同名オブジェクトへ低レベルAPIで直接コピーする。
+        plan.forEach(function(item) {
+          gnrSyncTextFieldToPageAnnots(doc, item.field);
+        });
+        gnrForceCheckboxAppearanceState(doc, GNR_FIELD.optionA, 'On');
+
+        // 4) NeedAppearances=trueが様式PDF自体に含まれている（pdf-lib由来ではなく、
+        //    テンプレート作成元のツールが埋め込んだもの。data/cpsc_gnr_template.pdfの
+        //    生データをpypdfで実測し、pdf-libのバンドル内にNeedAppearancesを扱う
+        //    コードが一切無いことも確認済み）。これが残っていると、ビューアによっては
+        //    自前で外観を再生成しようとして、このツールが書き込んだ正しい外観
+        //    （調整済みフォントサイズ・チェックマーク）を無視してしまう場合がある。
+        //    正しい外観を生成した後は常にfalseへ戻し、全ビューアでこのツールが
+        //    生成した外観がそのまま使われるようにする。
+        form.acroForm.dict.set(PDFLib.PDFName.of('NeedAppearances'), PDFLib.PDFBool.False);
+
+        return doc.save();
+      });
     }).then(function(bytes) {
       var blob = new Blob([bytes], { type: 'application/pdf' });
       var url = URL.createObjectURL(blob);
@@ -7795,9 +7978,10 @@ function gnrRunAiFromPageFlow(btn, msg) {
       descEl.value = result.description;
       gnrUpdateDescCount();
       showGnrAiResultBadge(true);
-      if (result.description.length > GNR_DESCRIPTION_MAX) {
-        showMessage(aiMsg2, 'error',
-          'AI生成結果が' + GNR_DESCRIPTION_MAX + '文字を超えています（現在' + result.description.length + '文字）。手動で短くしてください。');
+      if (result.description.length > GNR_DESCRIPTION_GUIDE_MAX) {
+        showMessage(aiMsg2, 'warn',
+          'AI生成結果が目安（約' + GNR_DESCRIPTION_GUIDE_MAX + '文字）を超えています（現在' + result.description.length +
+          '文字）。欄に収まらない場合はPDF生成時にお知らせします。必要なら手動で短くしてください。');
       } else {
         aiMsg2.style.display = 'none';
       }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "HSコードワークシート作成君",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "description": "商品カテゴリ別ガイドウィザードまたはAIでHTSUSコード／通関用タイトルを自動生成し、通関ワークシートをPDF出力します。FedEx TSCA証明書PDFと時計用Watch Worksheetの作成にも対応。AI機能にはOpenAI APIキーが必要です。",
   "permissions": [
     "storage",
