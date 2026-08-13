@@ -20478,35 +20478,35 @@
       "duty": "Free",
       "desc": "Toy not a children's product (age 15+ / adult / collector) — not subject to CPSIA",
       "htsus": "9503.00.00.90",
-      "title_template": "{condition} {brand} {model} Collectible Figure, Not for Children (Age 15+)"
+      "title_template": "{condition} {brand} {model} Figure For Ages 15+"
     },
     "bb_l_col_plush": {
       "hs6": "9503.00",
       "duty": "Free",
       "desc": "Toy not a children's product (age 15+ / adult / collector) — not subject to CPSIA",
       "htsus": "9503.00.00.90",
-      "title_template": "{condition} {brand} {model} Collectible Plush, Not for Children (Age 15+)"
+      "title_template": "{condition} {brand} {model} Plush For Ages 15+"
     },
     "bb_l_col_model": {
       "hs6": "9503.00",
       "duty": "Free",
       "desc": "Toy not a children's product (age 15+ / adult / collector) — not subject to CPSIA",
       "htsus": "9503.00.00.90",
-      "title_template": "{condition} {brand} {model} Collectible Scale Model, Not for Children (Age 15+)"
+      "title_template": "{condition} {brand} {model} Scale Model For Ages 15+"
     },
     "bb_l_col_diecast": {
       "hs6": "9503.00",
       "duty": "Free",
       "desc": "Toy not a children's product (age 15+ / adult / collector) — not subject to CPSIA",
       "htsus": "9503.00.00.90",
-      "title_template": "{condition} {brand} {model} Collectible Diecast Vehicle, Not for Children (Age 15+)"
+      "title_template": "{condition} {brand} {model} Diecast Vehicle For Ages 15+"
     },
     "bb_l_col_toy": {
       "hs6": "9503.00",
       "duty": "Free",
       "desc": "Toy not a children's product (age 15+ / adult / collector) — not subject to CPSIA",
       "htsus": "9503.00.00.90",
-      "title_template": "{condition} {brand} {model} Collectible Toy, Not for Children (Age 15+)"
+      "title_template": "{condition} {brand} {model} Toy For Ages 15+"
     }
   }
 }

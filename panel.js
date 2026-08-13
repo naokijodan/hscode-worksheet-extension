@@ -2301,34 +2301,34 @@ function tscaAiSystemPrompt(sourceLabel) {
     '   - ONE single line only (no line breaks). NEVER exceed 85 characters in total, including the',
     '     age statement. The 85-character limit is an ABSOLUTE requirement, not a target.',
     '   - Prioritize fitting over completeness: shorten or omit the brand name if needed.',
-    '   - For toys and collectibles (see the age statement rules below), use this exact format:',
-    '     <Condition> Collectible <short item type> "<product name>"[, by <brand>], Not for Children (Age NN+)',
+    '   - For toys and collectibles (see the age statement rules below), use this exact format',
+    '     (no quotes around the product name, no comma before the age statement):',
+    '     <Condition> [<Brand>] <short product name> <item type> For Ages NN+',
     '   - For all other products (kitchenware, clothing, electronics, etc.), use this format',
-    '     with NO "Collectible" and NO age statement:',
-    '     <Condition> <short item type> "<product name>"[, by <brand>]',
+    '     with NO age statement:',
+    '     <Condition> [<Brand>] <short product name> <item type>',
     '   - Age statement rules (FIXED values, appended at the END of the title):',
-    '     * Trading cards and card games: append ", Not for Children (Age 13+)". Always exactly 13+.',
+    '     * Trading cards and card games: append " For Ages 13+". Always exactly 13+.',
     '     * ALL other toys and collectibles - anime/manga figures, character goods, plush toys,',
-    '       model kits, dolls, AND toys meant for actual play: append ", Not for Children (Age 15+)".',
+    '       model kits, dolls, AND toys meant for actual play: append " For Ages 15+".',
     '       These are exported as collector items for adults, so Age 15+ is ALWAYS used,',
     '       even for products originally marketed to young children.',
     '     * IGNORE any age label that appears in the ' + sourceLabel + ' (e.g. "4+", "Ages 3 and up",',
     '       "対象年齢6歳以上"). Such labels come from the manufacturer or other sellers and MUST NOT be',
-    '       copied into the title. Use ONLY the fixed values above: Age 13+ for trading cards and',
-    '       card games, Age 15+ for every other toy or collectible.',
-    '     * Omit the age statement (and the word "Collectible") only when the product is not a toy or collectible.',
+    '       copied into the title. Use ONLY the fixed values above: For Ages 13+ for trading cards and',
+    '       card games, For Ages 15+ for every other toy or collectible.',
+    '     * Omit the age statement only when the product is not a toy or collectible.',
     '   - Character budget (how to ALWAYS stay within 85 characters):',
-    '     * The fixed parts (condition + "Collectible" + item type + quotes + age statement)',
-    '       already use about 50-60 characters, so keep the quoted product name to AT MOST',
-    '       20 characters. For long names keep only the core character/product name',
+    '     * The fixed parts (condition + brand + item type + age statement) already use about',
+    '       25-45 characters, so keep the product name to just the core character/product name',
     '       (e.g. "Ultimate Madoka & Devil Homura" -> "Madoka & Homura").',
-    '     * OMIT ", by <brand>" whenever the total would otherwise exceed 85 characters.',
-    '     * Use the shortest generic noun for the item type (figure / plush / cards / model kit).',
-    '   - The fixed suffix ", Not for Children (Age 15+)" is about 28 characters, so keep the part',
-    '     of the title before the suffix to roughly 55 characters or less.',
-    '   - Example (figure): Used Collectible figure "Son Goku", Not for Children (Age 15+)',
-    '   - Example (trading card): Used Collectible trading card "Pikachu", Not for Children (Age 13+)',
-    '   - Example (non-toy, no age statement): Used ceramic coffee mug "Sakura Blossom"',
+    '     * OMIT the brand name whenever the total would otherwise exceed 85 characters.',
+    '     * Use the shortest generic noun for the item type (Figure / Plush / Trading Card / Model Kit).',
+    '   - The fixed suffix " For Ages 15+" is about 14 characters, so keep the rest of the title',
+    '     to roughly 70 characters or less.',
+    '   - Example (figure): Used Medicom Toy Mickey Mouse Figure For Ages 15+',
+    '   - Example (trading card): Used Pikachu Trading Card For Ages 13+',
+    '   - Example (non-toy, no age statement): Used Sakura Blossom Ceramic Coffee Mug',
     '2. "description" - a detailed factual description:',
     '   - One factual sentence starting with the condition, then item type, product name in quotes, and brand,',
     '     followed by a "Materials:" bullet list. Maximum 350 characters total.',
@@ -2353,7 +2353,7 @@ function tscaAiSystemPrompt(sourceLabel) {
     '- List at most 4 materials.',
     'Return ONLY a single JSON object with exactly the keys "title" and "description".',
     'No markdown, no code fences, no explanation. Example output:',
-    '{"title": "Used Collectible figure \\"Son Goku\\", Not for Children (Age 15+)", "description": "Used (secondhand) painted finished figure \\"Son Goku\\" by Banpresto.\\nMaterials:\\n- PVC (polyvinyl chloride): approx. 90%\\n- ABS (acrylonitrile butadiene styrene): approx. 10%"}'
+    '{"title": "Used Son Goku Figure For Ages 15+", "description": "Used (secondhand) painted finished figure \\"Son Goku\\" by Banpresto.\\nMaterials:\\n- PVC (polyvinyl chloride): approx. 90%\\n- ABS (acrylonitrile butadiene styrene): approx. 10%"}'
   ].join('\n');
 }
 
@@ -2929,11 +2929,11 @@ function tscaShortenTitlePrompt() {
     '- Keep the same overall format and meaning. Do not add anything new.',
     '- Keep the condition word at the start as just "Used" or "New". If the title starts with',
     '  "Used (secondhand)", shorten that to "Used".',
-    '- If an age statement suffix like ", Not for Children (Age 15+)" is present, keep it',
+    '- If an age statement suffix like " For Ages 15+" is present, keep it',
     '  EXACTLY unchanged at the end.',
-    '- Shorten the quoted product name to at most 20 characters, keeping only the core',
+    '- Shorten the product name to at most 20 characters, keeping only the core',
     '  character/product name (e.g. "Ultimate Madoka & Devil Homura" -> "Madoka & Homura").',
-    '- Remove ", by <brand>" if needed.',
+    '- Remove the brand name if needed.',
     'Return ONLY a JSON object: {"title": "<shortened title>"}. No markdown, no explanation.'
   ].join('\n');
 }
@@ -5685,15 +5685,16 @@ function fedexCallAiJson(pageInfo, cb) {
     '    - Start with the condition word "Used" or "New": use "Used" if the source indicates a secondhand',
     '      item (中古, used, pre-owned, 目立った傷や汚れなし, etc.); use "New" ONLY if the source clearly',
     '      states new/unused/unopened (新品, 未使用, 未開封, etc.); if undetermined, use "Used".',
-    '    - For toys and collectibles, use this exact format:',
-    '      <Condition> Collectible <short item type> "<product name>"[, by <brand>], Not for Children (Age NN+)',
-    '      Trading cards and card games always use ", Not for Children (Age 13+)"; ALL other toys and',
+    '    - For toys and collectibles, use this exact format (no quotes around the product name,',
+    '      no comma before the age statement):',
+    '      <Condition> [<Brand>] <short product name> <item type> For Ages NN+',
+    '      Trading cards and card games always use " For Ages 13+"; ALL other toys and',
     '      collectibles (anime/manga figures, character goods, plush toys, model kits, dolls, and toys',
-    '      meant for actual play) always use ", Not for Children (Age 15+)", even if originally marketed',
+    '      meant for actual play) always use " For Ages 15+", even if originally marketed',
     '      to young children. IGNORE any age label in the source information (e.g. "4+", "対象年齢6歳以上")',
-    '      — never copy it; use ONLY the fixed Age 13+ / Age 15+ values above.',
-    '    - For all other products (not a toy or collectible), use this format with NO "Collectible" and',
-    '      NO age statement: <Condition> <short item type> "<product name>"[, by <brand>]',
+    '      — never copy it; use ONLY the fixed For Ages 13+ / For Ages 15+ values above.',
+    '    - For all other products (not a toy or collectible), use this format with NO age statement:',
+    '      <Condition> [<Brand>] <short product name> <item type>',
     '    - No marketing language. Keep it a few words beyond the condition/format above.',
     '  "use_en": the product\'s intended use in English, e.g. "for retail sale". For collector items/hobby goods use something like "for collection/display" when that fits the context better than "for retail sale".',
     '  "materials_en": material composition in English.',
@@ -7511,37 +7512,38 @@ function gnrAiSystemPrompt() {
     '  * Use "New" ONLY if the source clearly states the item is new/unused/unopened (新品, 未使用, 未開封, etc.).',
     '  * If the condition cannot be determined, use "Used" (items handled by this tool come from Japanese',
     '    secondhand marketplaces).',
-    '- For toys and collectibles (see the age statement rules below), use this exact format:',
-    '  <Condition> Collectible <short item type> "<product name>"[, by <brand>], Not for Children (Age NN+)',
+    '- For toys and collectibles (see the age statement rules below), use this exact format',
+    '  (no quotes around the product name, no comma before the age statement):',
+    '  <Condition> [<Brand>] <short product name> <item type> For Ages NN+',
     '- For all other products (kitchenware, clothing, electronics, etc.), use this format with NO',
-    '  "Collectible" and NO age statement:',
-    '  <Condition> <short item type> "<product name>"[, by <brand>]',
+    '  age statement:',
+    '  <Condition> [<Brand>] <short product name> <item type>',
     '- Age statement rules (FIXED values, appended at the END, only for toys/collectibles):',
-    '  * Trading cards and card games: append ", Not for Children (Age 13+)". Always exactly 13+.',
+    '  * Trading cards and card games: append " For Ages 13+". Always exactly 13+.',
     '  * ALL other toys and collectibles - anime/manga figures, character goods, plush toys, model kits,',
-    '    dolls, AND toys meant for actual play: append ", Not for Children (Age 15+)". These are exported',
+    '    dolls, AND toys meant for actual play: append " For Ages 15+". These are exported',
     '    as collector items for adults, so Age 15+ is ALWAYS used, even for products originally marketed',
     '    to young children.',
     '  * IGNORE any age label that appears in the source information (e.g. "4+", "Ages 3 and up",',
     '    "対象年齢6歳以上"). Such labels come from the manufacturer or other sellers and MUST NOT be',
-    '    copied. Use ONLY the fixed values above: Age 13+ for trading cards and card games, Age 15+',
-    '    for every other toy or collectible.',
-    '  * Omit the age statement (and the word "Collectible") when the product is not a toy or collectible.',
+    '    copied. Use ONLY the fixed values above: For Ages 13+ for trading cards and card games,',
+    '    For Ages 15+ for every other toy or collectible.',
+    '  * Omit the age statement when the product is not a toy or collectible.',
     '- Do NOT include model numbers, materials, or percentages. Keep it short and factual.',
     '- The condition word ("Used"/"New") and the age statement suffix (when the product is a toy or',
     '  collectible) are MANDATORY and must NEVER be dropped to save space.',
     '- Character budget (how to ALWAYS stay within ' + GNR_DESCRIPTION_STRICT_MAX + ' characters), in this priority order:',
-    '  (a) First, omit ", by <brand>" if the total would otherwise exceed the limit.',
-    '  (b) Next, shorten the quoted product name to just the core character/card/product name (drop',
+    '  (a) First, omit the brand name if the total would otherwise exceed the limit.',
+    '  (b) Next, shorten the product name to just the core character/card/product name (drop',
     '      series names and subtitles, e.g. "Ultimate Madoka & Devil Homura" -> "Madoka & Homura").',
-    '  (c) Finally, use the shortest generic noun for the item type (figure / plush / card / model kit).',
+    '  (c) Finally, use the shortest generic noun for the item type (Figure / Plush / Card / Model Kit).',
     'Examples:',
-    '  Used Collectible figure "Goku", Not for Children (Age 15+)',
-    '  Used Collectible card "Pikachu", Not for Children (Age 13+)',
-    '  Used plastic kitchen storage container "XYZ"',
-    '  New ceramic coffee mug "Sakura Blossom"',
+    '  Used Goku Figure For Ages 15+',
+    '  Used Pikachu Card For Ages 13+',
+    '  Used plastic kitchen storage container XYZ',
+    '  New Sakura Blossom Ceramic Coffee Mug',
     'Return ONLY a JSON object with exactly the key "description". No markdown, no code fences, no explanation.',
-    'Example output: {"description": "Used Collectible figure \\"Goku\\", Not for Children (Age 15+)"}'
+    'Example output: {"description": "Used Goku Figure For Ages 15+"}'
   ].join('\n');
 }
 
@@ -7622,12 +7624,12 @@ function gnrShortenDescriptionPrompt() {
     'Rewrite it so the WHOLE description is ' + GNR_DESCRIPTION_STRICT_MAX + ' characters or fewer.',
     'This is an ABSOLUTE requirement.',
     'Shorten in this priority order:',
-    '  (a) First, omit ", by <brand>" if present.',
-    '  (b) Next, shorten the quoted product name to just the core character/card/product name',
+    '  (a) First, omit the brand name if present.',
+    '  (b) Next, shorten the product name to just the core character/card/product name',
     '      (drop series names and subtitles).',
     '  (c) Finally, use a shorter, more generic item type noun.',
     'NEVER remove the leading condition word ("Used"/"New") or the age statement suffix',
-    '(", Not for Children (Age 13+)" or "...(Age 15+)") if it is present in the original —',
+    '(" For Ages 13+" or " For Ages 15+") if it is present in the original —',
     'keep those EXACTLY as they are. Keep the same overall meaning; do not add anything new.',
     'Return ONLY a JSON object: {"description": "<shortened description>"}. No markdown, no explanation.'
   ].join('\n');
@@ -7665,11 +7667,12 @@ function gnrFinalizeAiDescription(description, msgEl, done) {
 
   // 自動短縮リトライ（1回だけ）
   showMessage(msgEl, 'info', 'Descriptionが長いため短縮中…');
-  // 決定的ガード（2026-08-13追加）: 短縮前の文字列に年齢表記サフィックスが含まれていたか
-  // どうかを、AI呼び出し前に機械的に記録しておく。gnrFindAgeLabelError（tscaFindInvalidAgeLabels
-  // の流用）は「誤った年齢の存在」しか検出できず、短縮リトライでAIがサフィックスを丸ごと
-  // 削ってしまうケース（消失）は検出できないため、ここで別途チェックする。
-  var gnrAgeSuffixRe = /Not for Children \(Age 1[35]\+\)/;
+  // 決定的ガード（2026-08-13追加、標準形式統一に伴い2026-08-13正規表現更新）: 短縮前の
+  // 文字列に年齢表記サフィックスが含まれていたかどうかを、AI呼び出し前に機械的に記録して
+  // おく。gnrFindAgeLabelError（tscaFindInvalidAgeLabelsの流用）は「誤った年齢の存在」しか
+  // 検出できず、短縮リトライでAIがサフィックスを丸ごと削ってしまうケース（消失）は検出
+  // できないため、ここで別途チェックする。
+  var gnrAgeSuffixRe = /For Ages 1[35]\+/;
   var hadAgeSuffix = gnrAgeSuffixRe.test(description);
   gnrCallAiJson(gnrShortenDescriptionPrompt(), description, function(err, retry) {
     if (err || !retry || !retry.description) {
