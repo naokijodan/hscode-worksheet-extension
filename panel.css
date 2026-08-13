@@ -1568,6 +1568,24 @@ select:focus {
   padding: 6px 4px;
 }
 
+/* 品目リスト1件ぶんのラッパー（既存の.tsca-product-row＋任意の住所2行目をまとめる）。
+   区切り線は「.tsca-product-row + .tsca-product-row」ではなくこちらで付ける
+   （2026-08-13 品目リストへの住所表示追加。TSCA機能のtscaRenderProductListは
+   このラップを使わないため、TSCA側の既存の区切り線表示に影響しない）。 */
+.fedex-item-block + .fedex-item-block {
+  border-top: 1px solid #eee;
+}
+
+/* メーカー住所の2行目表示。テキスト選択・コピー可能（通常のテキストノードのため既定で
+   選択可）、長い住所は折り返して全文表示する。 */
+.fedex-item-address {
+  padding: 0 8px 6px 30px;
+  font-size: 11px;
+  color: #666;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* FedEx機能のダークモード個別指定は削除（パネルbodyは常にライト背景のため、
    背景だけ暗転すると文字が読めなくなる。ライト配色で固定する） */
 

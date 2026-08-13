@@ -6344,6 +6344,16 @@ function fedexRenderItemList() {
   listEl.style.display = '';
 
   items.forEach(function(it, i) {
+    // 2026-08-13 実機テスト指摘対応: 品目1件ぶんを「行（既存の.tsca-product-row）」＋
+    // 「任意の住所2行目（.fedex-item-address）」でまとめる .fedex-item-block でラップする。
+    // TSCA機能の商品リスト（tscaRenderProductList）はこのラップを使わず、これまでどおり
+    // .tsca-product-row を.tsca-product-listの直接の子として並べているため、
+    // 「.tsca-product-row + .tsca-product-row」の区切り線CSSはTSCA側では従来どおり効く。
+    // FedEx側は新設の「.fedex-item-block + .fedex-item-block」で区切り線を付け直しており、
+    // 既存のCSS・TSCA機能のレンダリングには一切手を入れていない。
+    var block = document.createElement('div');
+    block.className = 'fedex-item-block';
+
     var row = document.createElement('div');
     row.className = 'tsca-product-row';
     if (state.fedex.editingIndex === i) row.className += ' tsca-product-row-editing';
@@ -6374,7 +6384,18 @@ function fedexRenderItemList() {
     row.appendChild(text);
     row.appendChild(editBtn);
     row.appendChild(delBtn);
-    listEl.appendChild(row);
+    block.appendChild(row);
+
+    // メーカー住所があれば2行目として表示する（テキスト選択・コピー可能、長文は折り返し）。
+    // 住所が空（未入力・辞書未ヒットで確定していない等）の場合は行を出さない。
+    if (it.maker_address_en) {
+      var addr = document.createElement('div');
+      addr.className = 'fedex-item-address';
+      addr.textContent = it.maker_address_en;
+      block.appendChild(addr);
+    }
+
+    listEl.appendChild(block);
   });
 }
 
@@ -6516,12 +6537,18 @@ function fedexReadQuestionsFunc() {
   return out;
 }
 
+// 2026-08-13 実機テストで発覚: 「製造者の住所（メーカー住所）」のような質問が、
+// address（住所）ではなく先に定義されていたmaker（製造者）グループに誤って
+// マッチしていた（fedexMatchFieldKeyは最初にマッチしたグループで即returnするため、
+// マッチ順序＝優先順位になる）。addressをmakerより前に置くことで、「住所」または
+// 「address」という語を含む質問は常にaddressへ、それを含まない「製造者の会社名」等の
+// 質問は従来どおりmakerへ解決されるようにした。他グループの相対順は変えていない。
 var FEDEX_FIELD_KEYWORDS = [
   { key: 'awb',      patterns: ['運送状', 'awb', 'waybill'] },
   { key: 'email',    patterns: ['メール', 'email', 'mail'] },
   { key: 'textile',  patterns: ['繊維', 'textile'] },
-  { key: 'maker',    patterns: ['会社名', '製造者', 'メーカー', 'manufacturer', 'company'] },
   { key: 'address',  patterns: ['住所', 'address'] },
+  { key: 'maker',    patterns: ['会社名', '製造者', 'メーカー', 'manufacturer', 'company'] },
   { key: 'materials',patterns: ['材質', '素材', 'material'] },
   { key: 'name',     patterns: ['製品名', '品名', 'product name'] },
   { key: 'use',      patterns: ['用途', 'purpose'] },
@@ -6602,7 +6629,13 @@ function fedexBuildMapping(questions) {
   fedexRenderMappingTable();
 }
 
-function fedexRenderMappingTable() {
+/** 対応表テーブル（state.fedex.mapping）を描画する。
+ *  preserveGate=true の場合、確認チェック（fedexMappingConfirmCheck）・書き込みボタンの
+ *  有効/無効状態を変更しない（2026-08-13 対応: 品目リストへ戻って何も読み取り直さずに
+ *  対応表画面へ戻ってきた再表示のケースで使う。内容は変わっていないため、
+ *  ユーザーが既に入れたチェックを黙って外さない）。
+ *  省略時（新規読み取り・再読み取りで対応表の内容が変わった場合）は従来どおりリセットする。 */
+function fedexRenderMappingTable(preserveGate) {
   var tableEl = document.getElementById('fedexMappingTable');
   tableEl.innerHTML = '';
 
@@ -6652,42 +6685,45 @@ function fedexRenderMappingTable() {
     tableEl.appendChild(tr);
   });
 
-  var checkEl = document.getElementById('fedexMappingConfirmCheck');
-  checkEl.checked = false;
-  document.getElementById('fedexWriteBtn').disabled = true;
+  if (!preserveGate) {
+    var checkEl = document.getElementById('fedexMappingConfirmCheck');
+    checkEl.checked = false;
+    document.getElementById('fedexWriteBtn').disabled = true;
+  }
 }
 
+/** フォームの質問を読み取り、成功時のみ対応表を作り直す。
+ *  2026-08-13 対応: 以前はタブ不一致・読み取り失敗などのどの失敗経路でも
+ *  state.fedex.formQuestions/mapping を問答無用でnullに破棄していたため、
+ *  一度作成した対応表がフォームタブを閉じただけで消え、後から見返せなくなる実害があった。
+ *  失敗時はエラーメッセージを表示するのみとし、既存のformQuestions/mapping・
+ *  画面に表示中の対応表テーブル・確認チェック状態には一切触れない（黙って消さない）。
+ *  新しい質問が読み取れた（成功した）場合のみ state.fedex.formQuestions を差し替え、
+ *  fedexBuildMapping() 経由で対応表とテーブルを作り直す（このときは意図的に
+ *  確認チェック・書き込みボタンをリセットする＝fedexRenderMappingTableの既定動作）。
+ *  「質問を読み取り直す」ボタン（fedexRereadBtn）は引き続きこの関数を直接呼ぶため、
+ *  明示的な再読み取りの入口として機能する。 */
 function fedexReadFormQuestions() {
   var msgEl = document.getElementById('fedexMappingMsg');
-  document.getElementById('fedexMappingTable').innerHTML = '';
   showMessage(msgEl, 'info', 'フォームの質問を読み取り中…');
 
-  function resetMappingConfirmGate() {
-    document.getElementById('fedexMappingConfirmCheck').checked = false;
-    document.getElementById('fedexWriteBtn').disabled = true;
-    state.fedex.formQuestions = null;
-    state.fedex.mapping = null;
-  }
-
   chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
-    if (!tabs || !tabs[0]) { showMessage(msgEl, 'error', 'タブが見つかりません。'); resetMappingConfirmGate(); return; }
+    if (!tabs || !tabs[0]) { showMessage(msgEl, 'error', 'タブが見つかりません。'); return; }
     var tab = tabs[0];
     var hostname = '';
     try { hostname = new URL(tab.url).hostname; } catch (e) {}
     if (hostname !== 'forms.cloud.microsoft' && hostname !== 'forms.office.com') {
       showMessage(msgEl, 'error', 'FedExのフォームページが前面のタブに開かれていません。フォームのページを開いてからもう一度押してください');
-      resetMappingConfirmGate();
       return;
     }
     chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: fedexReadQuestionsFunc
     }, function(results) {
-      if (chrome.runtime.lastError) { showMessage(msgEl, 'error', chrome.runtime.lastError.message); resetMappingConfirmGate(); return; }
+      if (chrome.runtime.lastError) { showMessage(msgEl, 'error', chrome.runtime.lastError.message); return; }
       var questions = (results && results[0] && results[0].result) || [];
       if (!questions.length) {
         showMessage(msgEl, 'error', 'フォームを読み取れませんでした。ページを開いた状態でもう一度お試しください。');
-        resetMappingConfirmGate();
         return;
       }
       msgEl.style.display = 'none';
@@ -6894,10 +6930,28 @@ function fedexRenderResults(results) {
 // ---------------------------------------------------------
 // 画面遷移・完了処理
 // ---------------------------------------------------------
+/** 品目リスト画面から対応表画面へ進む。
+ *  2026-08-13 対応: 以前は毎回 fedexReadFormQuestions() を強制実行しており、
+ *  フォームタブが前面にない（品目編集のため他タブ・他画面を見ている等）だけで
+ *  既に作成済みの対応表が丸ごと破棄され、後戻りできなくなる実害があった。
+ *  state.fedex.mapping が既にあれば再読み取りはせず、既存の対応表をそのまま
+ *  再描画して表示するだけにする（fedexRenderMappingTable(true)＝確認チェック・
+ *  書き込みボタンの状態も維持し、黙って外さない）。これにより、対応表の
+ *  テキスト欄に手入力した内容や選択済みのラジオ値も保持される。
+ *  内容を最新化したい場合は「質問を読み取り直す」ボタン（fedexReadFormQuestionsを
+ *  直接呼ぶ）が引き続き明示的な再読み取りの入口として機能し、その場合は
+ *  fedexBuildMapping経由で対応表が作り直され、確認ゲートも従来どおりリセットされる。
+ *  対応表がまだ無い（初回）場合は従来どおり読み取りから行う。 */
 function fedexGoToMapping() {
   fedexCommitItemDraft(); // 下書きが残っていれば先に品目リストへ確定する
   fedexHideMakerPanels(); // 確定の成否にかかわらず、対応表画面へ遷移する前にメーカー関連パネルを必ず閉じる
   showFedexSub('fedexSubMapping');
+  if (state.fedex.mapping) {
+    var msgEl = document.getElementById('fedexMappingMsg');
+    if (msgEl) msgEl.style.display = 'none';
+    fedexRenderMappingTable(true);
+    return;
+  }
   fedexReadFormQuestions();
 }
 
