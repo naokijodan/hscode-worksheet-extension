@@ -76,7 +76,7 @@ function showSection(id) {
                   'sectionResult', 'sectionConfirm', 'sectionPrint',
                   'sectionCpscWiz', 'sectionCpscResult', 'sectionTsca',
                   'watch_sectionInput', 'watch_sectionWizard', 'watch_sectionPrint',
-                  'sectionFedex', 'sectionGnr'];
+                  'sectionFedex', 'sectionGnr', 'sectionFormChoice'];
   sections.forEach(function(sid) {
     var el = document.getElementById(sid);
     if (el) el.style.display = (sid === id) ? '' : 'none';
@@ -1988,7 +1988,12 @@ window.addEventListener('load', function() {
 
   // ---- AI解析 ----
   document.getElementById('aiAnalyzeBtn').addEventListener('click', startAiFlow);
-  document.getElementById('tscaAiBtn').addEventListener('click', startTscaAiFlow);
+  // v1.7.1: 「AIでTSCA書類を作成する」はまず様式選択画面（TSCA／CPSC Goods Not
+  // Registered）を経由する。選択後の分岐はformChoice機能側で行い、TSCA様式が選ばれた
+  // 場合は既存のrunTscaAiFromPageFlow()を無変更のまま呼ぶ。
+  document.getElementById('tscaAiBtn').addEventListener('click', function() {
+    openFormChoice('ai');
+  });
 
   // 初期表示
   showSection('sectionHome');
@@ -2453,13 +2458,6 @@ function runTscaAiFromPageFlow(btn, msg, openSection) {
       });
     });
   });
-}
-
-/** ホームの赤ボタン: 開いているページをAIで分析し、TSCA用の英語商品説明を生成してTSCAフォームを開く。 */
-function startTscaAiFlow() {
-  var msg = document.getElementById('tscaAiHomeMsg');
-  var btn = document.getElementById('tscaAiBtn');
-  runTscaAiFromPageFlow(btn, msg, true);
 }
 
 /** 開いているページの情報からTSCA用の {title, description}（通関用タイトル＋詳細説明）を生成する。
@@ -3695,11 +3693,14 @@ function tscaClearAfterComplete() {
 // -------------------------------------------------------
 window.addEventListener('load', function() {
   document.getElementById('tscaManualLink').addEventListener('click', function() {
+    // v1.7.1: 直接openTscaSection()を呼ばず、まず様式選択画面（TSCA／CPSC Goods Not
+    // Registered）を経由する。TSCA様式を選んだ場合はformChoice機能側でopenTscaSection()を
+    // 呼ぶ（このopenTscaSection()自体は無変更）。
     // 下書き（#tscaProductDesc）は自動確定しない。確定は「＋商品リストに追加」
     // 「確認画面へ進む」「AI追加の直前」の明示操作のみで行う（黙って商品リストに
     // 確定され、次回セッションへ持ち越されるのを防ぐため）。下書きの内容はテキスト
     // エリアにそのまま残る。
-    openTscaSection();
+    openFormChoice('manual');
   });
   document.getElementById('backFromTsca').addEventListener('click', function() {
     // 同上。「戻る」でも下書きは確定しない（テキストエリアに残したまま、消しも
@@ -3785,7 +3786,7 @@ window.addEventListener('load', function() {
 //       * startAiFlow      … runWatchAiFlow（共通ロジック）+ startWatchAiFlow
 //                             （セクション内ボタン用）+ startWatchAiFlowHome
 //                             （ホームの緑ボタン用）に分割。TSCA機能の
-//                             runTscaAiFromPageFlow / startTscaAiFlow と同じ構成。
+//                             runTscaAiFromPageFlow と同じ構成。
 //     他の関数名・変数名は移植元のまま（衝突なしを確認済み）。
 //   - Watch専用の設定画面（会社情報・APIキー入力）は移植していない。
 //     APIキーは既存の state.openaiKey（_hsOpenAiKey）を、会社情報は既存の
@@ -7661,15 +7662,17 @@ function gnrClearAfterComplete() {
 // CPSC書類（GNR）機能: イベント登録
 // -------------------------------------------------------
 window.addEventListener('load', function() {
-  document.getElementById('gnrHomeBtn').addEventListener('click', openGnrSection);
+  // v1.7.1: ホーム専用ボタンは廃止。CPSC書類はTSCA書類作成機能の入口にある
+  // 様式選択画面（#sectionFormChoice）経由でのみ開く（openFormChoice()参照）。
 
   document.getElementById('backFromGnr').addEventListener('click', function() {
-    // PDFダウンロード完了後（state.gnr.completed）に「ホームへ」を選んだ場合だけ、
+    // v1.7.1: 「戻る」は様式選択画面（#sectionFormChoice）に戻す（ホームへは戻さない）。
+    // PDFダウンロード完了後（state.gnr.completed）に「戻る」を選んだ場合だけ、
     // 前回値が次回に残らないようフォームを完全クリアする（TSCA機能と同じ考え方）。
     // 作業途中（PDF未生成、またはPDF生成後に編集を再開してフラグが解除された状態）は
     // 従来どおり入力保持。
     if (state.gnr.completed) gnrClearAfterComplete();
-    showSection('sectionHome');
+    showSection('sectionFormChoice');
   });
 
   document.getElementById('gnrFileInput').addEventListener('change', function(e) {
@@ -7702,4 +7705,135 @@ window.addEventListener('load', function() {
       gnrFormSub.addEventListener(evt, function() { state.gnr.completed = false; });
     });
   }
+});
+
+// =========================================================
+// 様式選択（TSCA / CPSC Goods Not Registered）機能（v1.7.1で追加）
+//
+// ユーザーレビューにより、CPSC書類（GNR）はホーム専用ボタンではなく「TSCA書類作成
+// 機能の中の一様式」として統合することになった。ホームの「📄 AIでTSCA書類を作成する」
+// （#tscaAiBtn）「TSCA証明書を手動で作成」（#tscaManualLink）のどちらから入っても、
+// まずこの選択画面（#sectionFormChoice）を経由し、TSCA様式／CPSC GNR様式のどちらを
+// 作るか選んでからそれぞれの既存フローへ進む。
+//
+// 【変えるのは入口・導線のみ】TSCA機能（tsca接頭辞の関数群）・GNR機能（gnr接頭辞の
+// 関数群、PDF記入エンジン・安全ガード・テンプレ差し替え機構）の中身は一切変更していない。
+// この選択画面から呼ぶのは既存の openTscaSection() / runTscaAiFromPageFlow() /
+// openGnrSection() であり、いずれも既存の呼び出しパターン（TSCAフォーム内ボタンなど、
+// 複数の入口から異なるbtn/msg要素を渡して呼ばれる設計）をそのまま利用しているだけで、
+// 関数自体の定義は変更していない。
+// =========================================================
+
+/** 様式選択画面を開いた入口（'ai' = AIでTSCA書類を作成するボタン経由 /
+ *  'manual' = TSCA証明書を手動で作成リンク経由）。選択画面で様式を選んだ後の
+ *  分岐（AI読み取りを試みるかどうか）に使う。 */
+state.formChoiceMode = 'manual';
+
+/** 様式選択画面を開く。mode: 'ai' | 'manual'（呼び出し元のボタンに応じて渡す）。 */
+function openFormChoice(mode) {
+  state.formChoiceMode = mode;
+  var msgEl = document.getElementById('formChoiceMsg');
+  if (msgEl) msgEl.style.display = 'none';
+  showSection('sectionFormChoice');
+}
+
+/** 様式選択画面で「AIでTSCA書類を作成する」入口からCPSC GNR様式を選んだ場合の
+ *  AI読み取り処理。TSCA機能のrunTscaAiFromPageFlow()と同じ「開いているページを
+ *  getPageInfo()で読み取り→AIに投げる→結果を入力欄にセットしてから対象セクションを
+ *  開く」という進行構造だけを踏襲し、GNR側は単一の1行フィールド（Description）のみを
+ *  扱うため、TSCA機能の関数は一切呼び出さず、既存のgnr接頭辞のAI呼び出し
+ *  （gnrAiSystemPrompt/gnrCallAiJson、既にgnrGenerateDescription()で使用中のもの）を
+ *  そのまま流用した独立版として実装した。getPageInfo()はTSCA専用ではなく、AI HS分析
+ *  （startAiFlow）やTSCA機能から共通で呼ばれている既存の汎用関数であり、この関数も
+ *  それを変更せず呼び出すだけである。
+ *  btn: 処理中に無効化するボタン要素。msg: 進捗・エラーメッセージの表示先
+ *  （様式選択画面の#formChoiceMsgを渡す）。 */
+function gnrRunAiFromPageFlow(btn, msg) {
+  if (!state.openaiKey) {
+    // TSCA機能のrunTscaAiFromPageFlow()と同じ挙動: APIキー未設定時は画面遷移せず、
+    // 現在の画面（様式選択画面）にエラーを表示して留まる。
+    showMessage(msg, 'error', 'APIキーが未設定です。設定画面で OpenAI APIキーを入力してください。');
+    msg.style.display = '';
+    return;
+  }
+
+  btn.disabled = true;
+  showMessage(msg, 'info', '分析中…');
+
+  getPageInfo(function(pageInfo, errReason) {
+    btn.disabled = false;
+    msg.style.display = 'none';
+
+    if (!pageInfo) {
+      openGnrSection();
+      var aiMsg1 = document.getElementById('gnrAiMsg');
+      showMessage(aiMsg1, 'error', (errReason || 'ページ情報を取得できませんでした') + '。商品情報は手動で入力してください。');
+      return;
+    }
+
+    var lines = [
+      'Product URL: ' + pageInfo.url,
+      'Product name: ' + (pageInfo.productName || '')
+    ];
+    if (pageInfo.brand)       lines.push('Brand: ' + pageInfo.brand);
+    if (pageInfo.condition)   lines.push('Condition: ' + pageInfo.condition);
+    if (pageInfo.category)    lines.push('Category on site: ' + pageInfo.category);
+    if (pageInfo.description) lines.push('Description: ' + pageInfo.description);
+
+    gnrCallAiJson(gnrAiSystemPrompt(), lines.join('\n'), function(err, result) {
+      // openGnrSection()は「Description・Tracking numberが両方空なら新規ドキュメント」
+      // と判定してフォームを初期化する（gnrEnterForm()のisFreshStart判定）。この時点では
+      // まだAI結果をDescription欄にセットしていないため、TSCA機能と同じ順序
+      // （先にセクションを開いてから、結果を入力欄へセットする）を守る。
+      openGnrSection();
+      var aiMsg2 = document.getElementById('gnrAiMsg');
+      if (err || !result) {
+        showMessage(aiMsg2, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '不明なエラー') + '。商品情報は手動で入力してください。');
+        return;
+      }
+      var descEl = document.getElementById('gnrDescription');
+      descEl.value = result.description;
+      gnrUpdateDescCount();
+      showGnrAiResultBadge(true);
+      if (result.description.length > GNR_DESCRIPTION_MAX) {
+        showMessage(aiMsg2, 'error',
+          'AI生成結果が' + GNR_DESCRIPTION_MAX + '文字を超えています（現在' + result.description.length + '文字）。手動で短くしてください。');
+      } else {
+        aiMsg2.style.display = 'none';
+      }
+    });
+  });
+}
+
+// -------------------------------------------------------
+// 様式選択機能: イベント登録
+// -------------------------------------------------------
+window.addEventListener('load', function() {
+  document.getElementById('backFromFormChoice').addEventListener('click', function() {
+    showSection('sectionHome');
+  });
+
+  document.getElementById('formChoiceTscaBtn').addEventListener('click', function() {
+    var btn = document.getElementById('formChoiceTscaBtn');
+    var msg = document.getElementById('formChoiceMsg');
+    if (state.formChoiceMode === 'ai') {
+      // 既存のrunTscaAiFromPageFlow()を無変更のまま、様式選択画面のbtn/msg要素を
+      // 渡して呼び出す（TSCAフォーム内ボタンが自分自身のbtn/msgを渡すのと同じ設計）。
+      // openSection=trueなので、処理完了後（成功・失敗どちらでも）openTscaSection()が
+      // 呼ばれて既存のTSCAフォームへ進む。
+      runTscaAiFromPageFlow(btn, msg, true);
+    } else {
+      openTscaSection();
+    }
+  });
+
+  document.getElementById('formChoiceGnrBtn').addEventListener('click', function() {
+    var btn = document.getElementById('formChoiceGnrBtn');
+    var msg = document.getElementById('formChoiceMsg');
+    if (state.formChoiceMode === 'ai') {
+      gnrRunAiFromPageFlow(btn, msg);
+    } else {
+      openGnrSection();
+    }
+  });
 });

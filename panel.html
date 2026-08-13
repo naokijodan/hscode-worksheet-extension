@@ -25,12 +25,10 @@
     <button class="btn btn-primary btn-sm" id="aiAnalyzeBtn" style="width:100%;">✨ AIでHSコードを分析する</button>
     <div id="aiAnalyzeMsg" class="message" style="display:none;margin-top:6px;"></div>
     <button class="btn btn-danger btn-sm" id="tscaAiBtn" style="width:100%;margin-top:8px;">📄 AIでTSCA書類を作成する</button>
-    <div id="tscaAiHomeMsg" class="message" style="display:none;margin-top:6px;"></div>
     <button class="btn btn-success btn-sm" id="watchAiHomeBtn" style="width:100%;margin-top:8px;">⌚ AIでWatch Worksheetを作成する</button>
     <div id="watchAiHomeMsg" class="message" style="display:none;margin-top:6px;"></div>
     <button class="btn btn-fedex btn-sm" id="fedexHomeBtn" style="width:100%;margin-top:8px;">📦 FedEx貨物フォーム入力</button>
     <div id="fedexHomeMsg" class="message" style="display:none;margin-top:6px;"></div>
-    <button class="btn btn-gnr btn-sm" id="gnrHomeBtn" style="width:100%;margin-top:8px;">🛡 CPSC書類を作成する (Goods Not Registered)</button>
 
     <!-- マニュアルで探す -->
     <div class="section-label" style="margin-top:14px;">マニュアルでHSコードを探す</div>
@@ -409,6 +407,31 @@
       <button class="link-btn" id="backFromCpscResult">← ウィザードへ戻る</button>
     </div>
     <div id="cpscResultContent"></div>
+  </div>
+
+  <!-- ========== セクション: 様式選択（TSCA / CPSC）（v1.7.1で追加） ========== -->
+  <!-- 「AIでTSCA書類を作成する」「TSCA証明書を手動で作成」のどちらの入口からも、
+       まずこの選択画面を経由してから既存のTSCAフロー（sectionTsca）または
+       CPSC Goods Not Registeredフォーム（sectionGnr）へ進む。
+       どちらのフローの中身も変更しておらず、入口の分岐のみをここに追加している。 -->
+  <div id="sectionFormChoice" class="section" style="display:none;">
+    <div class="panel-header">
+      <h1>書類の様式を選択</h1>
+      <button class="link-btn" id="backFromFormChoice">← ホームへ</button>
+    </div>
+
+    <div class="disclaimer">
+      作成する通関書類の様式を選んでください。
+    </div>
+
+    <div class="section-label">様式を選ぶ</div>
+    <button class="btn btn-danger btn-sm" id="formChoiceTscaBtn" style="width:100%;">📄 FedEx TSCA様式（従来）</button>
+    <div class="field-note" style="margin:4px 0 12px;">化学物質規制（TSCA）に関する証明書です。</div>
+
+    <button class="btn btn-gnr btn-sm" id="formChoiceGnrBtn" style="width:100%;">🛡 CPSC Goods Not Registered様式</button>
+    <div class="field-note" style="margin:4px 0 12px;">この商品はCPSC（米国消費者製品安全委員会）の規制対象ではないことを申告する様式です（Option A・免責運用）。子ども向け商品には使えません。</div>
+
+    <div id="formChoiceMsg" class="message" style="display:none;margin-top:6px;"></div>
   </div>
 
   <!-- ========== セクション: TSCA証明書（FedEx） ========== -->
