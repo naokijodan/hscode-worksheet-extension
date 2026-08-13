@@ -7210,6 +7210,25 @@ var GNR_REQUIRED_FIELD_NAMES = [
  *  最終判定・生成ブロックは gnrGeneratePdf() が実際に読み込んだ様式PDFの欄の実寸を使って
  *  行う（gnrFitFontSize）ため、差し替え様式で欄の幅が違っても正しく判定される。 */
 var GNR_DESCRIPTION_GUIDE_MAX = 70;
+
+/** AIに課す厳格な文字数上限（2026-08-13追加）。実機で、Collectible形式＋年齢表記の
+ *  導入によりAI生成Descriptionが115字になり、gnrGeneratePdf()の欄幅実測ブロック
+ *  （8ptまで縮小しても収まらない）に毎回引っかかってPDF生成まで到達できない不具合が
+ *  発生したため、TSCA機能のtscaFinalizeAiTitle()と同じ「AI応答受領後に長すぎたら
+ *  1回だけ短縮を再依頼する」仕上げ処理（gnrFinalizeAiDescription）とあわせて導入した。
+ *  値の根拠（実測）: 当初案の65は、pdf-libのfont.widthOfTextAtSizeで実測したところ、
+ *  典型的な英語表記（例: Sailor Moon・Homura Akemi等の実在キャラ名を使ったCollectible
+ *  形式）では65〜68字でもぎりぎり収まる一方、大文字が多い意地悪な商品名
+ *  （例: 1語の英大文字ブランド名）では63字時点で既に欄（247.9x15.0pt、8pt時）を
+ *  超え始めることを確認した。60ならこの意地悪ケースでも実測22pt以上の余裕がある
+ *  ため、65より安全側の60を採用した。この値はgnrAiSystemPrompt()の文字数指示・
+ *  gnrShortenDescriptionPrompt()の短縮指示・gnrFinalizeAiDescription()の超過判定の
+ *  3箇所すべてで共通に参照する（値がずれないようにするため）。
+ *  それでも「収まる保証」ではなく目標値であり、最終的な安全網は変わらず
+ *  gnrGeneratePdf()の欄幅実測ブロック（GNR_FIT_MIN_FONT_SIZEまで縮小・生成ブロック）
+ *  が担う。 */
+var GNR_DESCRIPTION_STRICT_MAX = 60;
+
 var GNR_DEFAULT_INTENDED_USE = '130.000'; // Option A免責運用の既定Intended use code
 
 /** テキスト欄の実測フィット処理（2026-08-13 実機テストで発覚した「文字の見切れ」への
@@ -7460,12 +7479,22 @@ function gnrEnterForm() {
  *  TSCA機能のtscaAiSystemPrompt()を「共通基準」として、状態(Used/New)判定・年齢固定値・
  *  Collectible形式・他セラー年齢表記コピー禁止の各ルールをGNR用に合わせて移植した
  *  （2026-08-13 対応。TSCA機能自体（tscaAiSystemPrompt）は変更していない）。
- *  文字数の絶対上限はプロンプトに書かない: 欄（247.9x15.0pt）に実際に収まるかどうかは
- *  gnrGeneratePdf()が読み込んだ様式PDFの実寸とフォントサイズ実測（8ptまで縮小）で
- *  判定・生成ブロックするため、Collectible形式で長くなった分もそちらが受け止める
- *  （旧: プロンプト内に「120字以内」という実態と合わない固定値があったため削除した）。
+ *  文字数の厳格な上限（GNR_DESCRIPTION_STRICT_MAX＝60字）をプロンプトに明記する
+ *  （2026-08-13再対応: 一度は「文字数上限は書かない」方針にしたが、実機でCollectible形式＋
+ *  年齢表記により115字のDescriptionが生成され、gnrGeneratePdf()の欄幅実測ブロックに
+ *  毎回引っかかってPDF生成まで到達できない不具合が発生したため）。
+ *  GNR_DESCRIPTION_STRICT_MAX(60)は、同梱テンプレートのDescription欄(247.9x15.0pt)を
+ *  8pt（gnrGeneratePdfのフォント下限）でpdf-libのwidthOfTextAtSizeで実測した結果に基づく
+ *  安全側の値: 「Collectible <type> "<ALL-CAPS 1語の商品名>", Not for Children (Age 15+)」
+ *  のような大文字が多い意地悪な文字列では63文字時点で欄をわずかに超え始めることを確認した
+ *  （典型的な英語表記なら65〜68文字でもぎりぎり収まるが、余裕がほぼ無い）。60文字なら
+ *  この意地悪ケースでも実測22pt以上の余裕がある。それでも欄への最終的な収まりは
+ *  gnrGeneratePdf()の実測フィット処理（8ptまで縮小・それでも収まらなければ生成ブロック）が
+ *  最終安全網として判定する（このプロンプトの60字はAIへの目標値であり、保証ではない）。
  *  年齢表記の機械ガードは既存のtscaFindInvalidAgeLabels()をそのまま流用する
- *  （gnrGenerateDescription/gnrRunAiFromPageFlow/gnrGoToConfirm参照）。 */
+ *  （gnrGenerateDescription/gnrRunAiFromPageFlow/gnrGoToConfirm参照）。
+ *  60字超過時の自動短縮リトライはgnrFinalizeAiDescription()が行う
+ *  （TSCA機能のtscaFinalizeAiTitle()と同じ「1回だけAIに短縮を再依頼する」パターン）。 */
 function gnrAiSystemPrompt() {
   return [
     'You are helping prepare a US CPSC (Consumer Product Safety Commission) "Certificate of Compliance —',
@@ -7474,7 +7503,9 @@ function gnrAiSystemPrompt() {
     'Given the product information below (it may be in Japanese), write ONE single-line factual English',
     'product description for the "Description" field of the form.',
     'Rules:',
-    '- ONE line only (no line breaks). Factual only. No exaggeration, no marketing or promotional language.',
+    '- ONE line only (no line breaks). NEVER exceed ' + GNR_DESCRIPTION_STRICT_MAX + ' characters in total,',
+    '  including spaces and punctuation. This is an ABSOLUTE requirement, not a target.',
+    '- Factual only. No exaggeration, no marketing or promotional language.',
     '- Start with the condition word "Used" or "New":',
     '  * Use "Used" if the source indicates a secondhand item (中古, used, pre-owned, 目立った傷や汚れなし, etc.).',
     '  * Use "New" ONLY if the source clearly states the item is new/unused/unopened (新品, 未使用, 未開封, etc.).',
@@ -7497,13 +7528,20 @@ function gnrAiSystemPrompt() {
     '    for every other toy or collectible.',
     '  * Omit the age statement (and the word "Collectible") when the product is not a toy or collectible.',
     '- Do NOT include model numbers, materials, or percentages. Keep it short and factual.',
+    '- The condition word ("Used"/"New") and the age statement suffix (when the product is a toy or',
+    '  collectible) are MANDATORY and must NEVER be dropped to save space.',
+    '- Character budget (how to ALWAYS stay within ' + GNR_DESCRIPTION_STRICT_MAX + ' characters), in this priority order:',
+    '  (a) First, omit ", by <brand>" if the total would otherwise exceed the limit.',
+    '  (b) Next, shorten the quoted product name to just the core character/card/product name (drop',
+    '      series names and subtitles, e.g. "Ultimate Madoka & Devil Homura" -> "Madoka & Homura").',
+    '  (c) Finally, use the shortest generic noun for the item type (figure / plush / card / model kit).',
     'Examples:',
-    '  Used Collectible figure "Son Goku", Not for Children (Age 15+)',
-    '  Used Collectible trading card "Pikachu", Not for Children (Age 13+)',
+    '  Used Collectible figure "Goku", Not for Children (Age 15+)',
+    '  Used Collectible card "Pikachu", Not for Children (Age 13+)',
     '  Used plastic kitchen storage container "XYZ"',
     '  New ceramic coffee mug "Sakura Blossom"',
     'Return ONLY a JSON object with exactly the key "description". No markdown, no code fences, no explanation.',
-    'Example output: {"description": "Used Collectible figure \\"Son Goku\\", Not for Children (Age 15+)"}'
+    'Example output: {"description": "Used Collectible figure \\"Goku\\", Not for Children (Age 15+)"}'
   ].join('\n');
 }
 
@@ -7574,12 +7612,86 @@ function gnrFindAgeLabelError(description) {
   return TSCA_AGE_LABEL_ERROR + '（検出: ' + bad.join(', ') + '）';
 }
 
+/** 超過Descriptionの短縮をAIに1回だけ再依頼するときのシステムプロンプト
+ *  （2026-08-13追加。TSCA機能のtscaShortenTitlePrompt()と同じ「1回だけ短縮を再依頼する」
+ *  パターンを踏襲）。状態語(Used/New)と年齢表記サフィックス（該当商品のみ）は維持させ、
+ *  (a)", by <brand>"省略 (b)商品名短縮 (c)item type簡潔化 の優先順位で短縮させる。 */
+function gnrShortenDescriptionPrompt() {
+  return [
+    'The product description below is too long to fit on one line of a US customs form.',
+    'Rewrite it so the WHOLE description is ' + GNR_DESCRIPTION_STRICT_MAX + ' characters or fewer.',
+    'This is an ABSOLUTE requirement.',
+    'Shorten in this priority order:',
+    '  (a) First, omit ", by <brand>" if present.',
+    '  (b) Next, shorten the quoted product name to just the core character/card/product name',
+    '      (drop series names and subtitles).',
+    '  (c) Finally, use a shorter, more generic item type noun.',
+    'NEVER remove the leading condition word ("Used"/"New") or the age statement suffix',
+    '(", Not for Children (Age 13+)" or "...(Age 15+)") if it is present in the original —',
+    'keep those EXACTLY as they are. Keep the same overall meaning; do not add anything new.',
+    'Return ONLY a JSON object: {"description": "<shortened description>"}. No markdown, no explanation.'
+  ].join('\n');
+}
+
+/** AI生成直後のDescription仕上げ処理（2026-08-13追加。TSCA機能のtscaFinalizeAiTitle()と
+ *  同じ「実測（この場合は文字数）で長すぎたら1回だけAIに短縮を再依頼する」パターンを
+ *  GNRへ移植した。実機で、Collectible形式＋年齢表記の導入によりAI生成Descriptionが
+ *  115字になり、gnrGeneratePdf()の欄幅実測ブロックに毎回引っかかってPDF生成まで
+ *  到達できない不具合が発生したための対応）。
+ *  1) GNR_DESCRIPTION_STRICT_MAX（60字）を超えていたら、AIに1回だけ短縮を再依頼する。
+ *  2) 短縮後も60字を超える場合は、現行どおりエラー表示のみ（Descriptionには結果を
+ *     そのまま入れたままにし、黙って切り捨てない。手動修正できる）。
+ *  3) 年齢表記の機械ガード（gnrFindAgeLabelError、TSCA共通基準）は短縮後の最終文字列に
+ *     対して適用する。
+ *  done(finalDescription, errText) を必ず1回呼ぶ。errTextはnull（問題なし）または
+ *  ユーザー向けエラーメッセージ（長さ超過・年齢表記違反の両方があれば改行で併記）。
+ *  msgElは短縮リトライ中の進行表示に使う（gnrGenerateDescription/gnrRunAiFromPageFlowの
+ *  どちらの呼び出し元でも、その画面で現在表示されているメッセージ要素を渡す）。 */
+function gnrFinalizeAiDescription(description, msgEl, done) {
+  function finish(desc, tooLong) {
+    var errs = [];
+    if (tooLong) {
+      errs.push('Descriptionが' + GNR_DESCRIPTION_STRICT_MAX + '文字を超えています（現在' + desc.length + '文字）。手動で短くしてください。');
+    }
+    var ageErr = gnrFindAgeLabelError(desc);
+    if (ageErr) errs.push(ageErr);
+    done(desc, errs.length ? errs.join('\n') : null);
+  }
+
+  if (description.length <= GNR_DESCRIPTION_STRICT_MAX) {
+    finish(description, false);
+    return;
+  }
+
+  // 自動短縮リトライ（1回だけ）
+  showMessage(msgEl, 'info', 'Descriptionが長いため短縮中…');
+  // 決定的ガード（2026-08-13追加）: 短縮前の文字列に年齢表記サフィックスが含まれていたか
+  // どうかを、AI呼び出し前に機械的に記録しておく。gnrFindAgeLabelError（tscaFindInvalidAgeLabels
+  // の流用）は「誤った年齢の存在」しか検出できず、短縮リトライでAIがサフィックスを丸ごと
+  // 削ってしまうケース（消失）は検出できないため、ここで別途チェックする。
+  var gnrAgeSuffixRe = /Not for Children \(Age 1[35]\+\)/;
+  var hadAgeSuffix = gnrAgeSuffixRe.test(description);
+  gnrCallAiJson(gnrShortenDescriptionPrompt(), description, function(err, retry) {
+    if (err || !retry || !retry.description) {
+      // リトライ失敗: 元のdescriptionのまま超過エラーとして返す
+      finish(description, true);
+      return;
+    }
+    if (hadAgeSuffix && !gnrAgeSuffixRe.test(retry.description)) {
+      // 短縮リトライで年齢表記サフィックスが消失した: 短縮結果を採用せず、
+      // 元の文字列のまま超過エラーとして返す（手動修正を促す既存のエラー経路）。
+      finish(description, true);
+      return;
+    }
+    finish(retry.description, retry.description.length > GNR_DESCRIPTION_STRICT_MAX);
+  });
+}
+
 /** 「✨ AIで英語説明を生成」ボタン: Description欄に入力済みの内容（日本語可）を
  *  元情報として、AIで1行の英語Descriptionを生成して同じ欄にセットする。
  *  TSCA機能のtscaGenerateDescription()と同じ「入力欄の内容を元情報として使い、
  *  結果を同じ欄に上書きする」パターンを踏襲する。
- *  文字数上限チェックはここでは目安（GNR_DESCRIPTION_GUIDE_MAX）による警告のみ。
- *  実際に様式の欄に収まるかの最終判定・生成ブロックはgnrGeneratePdf()が行う。 */
+ *  長さ超過時の自動短縮リトライ・年齢表記ガードはgnrFinalizeAiDescription()で行う。 */
 function gnrGenerateDescription() {
   var msgEl = document.getElementById('gnrAiMsg');
   var btn = document.getElementById('gnrAiDescBtn');
@@ -7599,28 +7711,27 @@ function gnrGenerateDescription() {
   showMessage(msgEl, 'info', '生成中…');
 
   gnrCallAiJson(gnrAiSystemPrompt(), source, function(err, result) {
-    btn.disabled = false;
     if (err || !result) {
+      btn.disabled = false;
       showMessage(msgEl, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '不明なエラー'));
       return;
     }
-    textEl.value = result.description;
-    gnrUpdateDescCount();
-    showGnrAiResultBadge(true);
-    // 年齢表記の機械ガード（TSCA共通基準）。黙って書き換えない: 検出時はエラー表示のみで、
-    // 欄には生成結果をそのまま残す（修正はユーザーが行う）。
-    var ageErr = gnrFindAgeLabelError(result.description);
-    if (ageErr) {
-      showMessage(msgEl, 'error', ageErr);
-      return;
-    }
-    if (result.description.length > GNR_DESCRIPTION_GUIDE_MAX) {
-      showMessage(msgEl, 'warn',
-        'AI生成結果が目安（約' + GNR_DESCRIPTION_GUIDE_MAX + '文字）を超えています（現在' + result.description.length +
-        '文字）。欄に収まらない場合はPDF生成時にお知らせします。必要なら手動で短くしてください。');
-      return;
-    }
-    msgEl.style.display = 'none';
+    // 長さ超過時は1回だけ自動短縮リトライ→年齢表記ガード（TSCA共通基準）。
+    // リトライ中もボタンは無効のまま・進行表示はmsgElに出る。
+    gnrFinalizeAiDescription(result.description, msgEl, function(finalDescription, errText) {
+      btn.disabled = false;
+      textEl.value = finalDescription;
+      gnrUpdateDescCount();
+      showGnrAiResultBadge(true);
+      if (errText) {
+        showMessage(msgEl, 'error', errText);
+        return;
+      }
+      // gnrFinalizeAiDescriptionがerrText無しで返す時点で
+      // finalDescription.length <= GNR_DESCRIPTION_STRICT_MAX(60) < GNR_DESCRIPTION_GUIDE_MAX(70)
+      // が保証されるため、目安超過の警告は不要（常に目安以内で収まっている）。
+      msgEl.style.display = 'none';
+    });
   });
 }
 
@@ -8136,24 +8247,24 @@ function gnrRunAiFromPageFlow(btn, msg) {
         showMessage(aiMsg2, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '不明なエラー') + '。商品情報は手動で入力してください。');
         return;
       }
-      var descEl = document.getElementById('gnrDescription');
-      descEl.value = result.description;
-      gnrUpdateDescCount();
-      showGnrAiResultBadge(true);
-      // 年齢表記の機械ガード（TSCA共通基準）。黙って書き換えない: 検出時はエラー表示のみで、
-      // 欄には生成結果をそのまま残す（修正はユーザーが行う）。
-      var ageErr = gnrFindAgeLabelError(result.description);
-      if (ageErr) {
-        showMessage(aiMsg2, 'error', ageErr);
-        return;
-      }
-      if (result.description.length > GNR_DESCRIPTION_GUIDE_MAX) {
-        showMessage(aiMsg2, 'warn',
-          'AI生成結果が目安（約' + GNR_DESCRIPTION_GUIDE_MAX + '文字）を超えています（現在' + result.description.length +
-          '文字）。欄に収まらない場合はPDF生成時にお知らせします。必要なら手動で短くしてください。');
-      } else {
+      // 長さ超過時は1回だけ自動短縮リトライ→年齢表記ガード（TSCA共通基準）。
+      // この時点でopenGnrSection()は既に実行済み（画面はGNRフォームへ遷移済み）なので、
+      // 短縮リトライ中の進行表示は現在の画面上のaiMsg2（gnrAiMsg）に出す
+      // （元のmsg要素は様式選択画面など既に非表示の画面のものであり得るため使わない）。
+      gnrFinalizeAiDescription(result.description, aiMsg2, function(finalDescription, errText) {
+        var descEl = document.getElementById('gnrDescription');
+        descEl.value = finalDescription;
+        gnrUpdateDescCount();
+        showGnrAiResultBadge(true);
+        if (errText) {
+          showMessage(aiMsg2, 'error', errText);
+          return;
+        }
+        // gnrFinalizeAiDescriptionがerrText無しで返す時点で
+        // finalDescription.length <= GNR_DESCRIPTION_STRICT_MAX(60) < GNR_DESCRIPTION_GUIDE_MAX(70)
+        // が保証されるため、目安超過の警告は不要（常に目安以内で収まっている）。
         aiMsg2.style.display = 'none';
-      }
+      });
     });
   });
 }
