@@ -2172,7 +2172,7 @@ function callOpenAI(pageInfo, cb) {
     '  "description": official English HTS category description (e.g. "Toys representing animals or non-human creatures")',
     '  "brand": brand name extracted from product info, or "Generic" if unknown',
     '  "model": model number or product/character name',
-    '  "title": customs declaration title in plain English, max 40 chars, no marketing language, no Japanese characters. Format: "[Brand] [Character/Model] [Item Type] [Age]". Always include brand name and character or model name when available. Append age requirement at the end when applicable: use "For Ages 15+" for anime/manga figures and collectibles (not toys for actual play), "For Ages 13+" for trading cards and card games, "For Ages X+" for toys with a clear target age. Omit age if the product is not a toy or collectible. Example: "Bandai Gundam RX-78-2 Figure For Ages 15+"',
+    '  "title": customs declaration title in plain English, max 40 chars, no marketing language, no Japanese characters. Format: "[Condition] [Brand] [Character/Model] [Item Type] [Age]". Start the title with the condition word "Used" or "New" as the very first word: use "Used" if the source indicates a secondhand item (中古, used, pre-owned, 目立った傷や汚れなし, etc.); use "New" ONLY if the source clearly states the item is new/unused/unopened (新品, 未使用, 未開封, etc.); if the condition cannot be determined, use "Used" (items handled by this tool come from Japanese secondhand marketplaces). Always include brand name and character or model name when available. Append age requirement at the end when applicable: use "For Ages 15+" for anime/manga figures and collectibles (not toys for actual play), "For Ages 13+" for trading cards and card games, "For Ages X+" for toys with a clear target age. IGNORE any age label that appears elsewhere in the source information (e.g. another seller\'s listing showing "4+", "対象年齢6歳以上", etc.) — such labels MUST NOT be copied into the title; only use the age rules above. Omit age if the product is not a toy or collectible. Example: "Used Gundam RX-78-2 Figure For Ages 15+"',
     '  "country": country of origin — default "Japan" for secondhand Japanese marketplace items unless clearly otherwise',
     '  "reason": one sentence in Japanese explaining why you chose this HTSUS code',
     'Return ONLY the JSON object. No markdown, no explanation outside the JSON.'
@@ -2231,17 +2231,35 @@ function showResultFromAi(aiData) {
   state.brand     = aiData.brand   || '';
   state.model     = aiData.model   || '';
   state.country   = aiData.country || 'Japan';
-  state.condition = 'Pre-Owned';
+  // 2026-08-13対応: titleの先頭に付くようになった状態表記(Used/New)とConditionの
+  // ドロップダウン（inputCondition、選択肢は 'Pre-Owned' / 'New in Box'）が二重表記
+  // （例: タイトルは"New ..."なのにConditionは中古のまま）にならないよう、
+  // AIが判定したtitleの先頭語からConditionの初期値を同期する。titleが"New"で
+  // 始まる場合のみ'New in Box'、それ以外（"Used"または判定不能）は現状どおり
+  // 'Pre-Owned'を既定にする（TSCAの「不明ならUsed」判定基準と揃える）。
+  state.condition = /^new\b/i.test(aiData.title || '') ? 'New in Box' : 'Pre-Owned';
 
   showResult();
   document.getElementById('inputTitle').value = aiData.title || '';
+
+  // 年齢表記の機械ガード（2026-08-13追加。TSCA機能のtscaFindInvalidAgeLabels()を流用し、
+  // TSCA共通基準の判定にする）。この画面は既存仕様どおり「For Ages X+」という任意の
+  // 年齢も許容しており、人が確認・修正してから次へ進む前提のため、TSCA/GNR/FedExのような
+  // 生成ブロックはせず、タイトルはそのまま欄に入れた上で警告メッセージを表示するのみとする。
+  var ageWarning = tscaFindInvalidAgeLabels(aiData.title || '');
 
   // AI判定理由を表示
   var badge = document.getElementById('aiResultBadge');
   if (badge) {
     var reasonText = aiData.reason ? '💡 ' + aiData.reason : '';
+    var ageWarningHtml = ageWarning.length
+      ? '<div class="ai-reason" style="color:#b3261e;">⚠ ' +
+        escapeHtml('年齢表記「' + ageWarning.join('」「') + '」を確認してください。他セラーの表記をそのままコピーしていないか、Age 13+/15+の固定値が適切か見直してください。') +
+        '</div>'
+      : '';
     badge.innerHTML = '✨ <strong>AI入力補助</strong> — 内容を確認・修正してから次へ進んでください' +
-      (reasonText ? '<div class="ai-reason">' + escapeHtml(reasonText) + '</div>' : '');
+      (reasonText ? '<div class="ai-reason">' + escapeHtml(reasonText) + '</div>' : '') +
+      ageWarningHtml;
     badge.style.display = '';
   }
 }
@@ -5642,7 +5660,12 @@ function fedexOpenAiJsonCall(systemPrompt, userContent, cb) {
 
 /** 開いているページ／URLから取得したpageInfoをAIに渡し、品目データ一式のJSONを生成する。
  *  材質のルールはTSCA機能のtscaAiSystemPrompt()の材質ルールと必ず整合させている:
- *  ページに記載があればその値をそのまま使い、なければ"approx."付きの概算にする。 */
+ *  ページに記載があればその値をそのまま使い、なければ"approx."付きの概算にする。
+ *  name_en の状態表記(Used/New)・年齢固定値・Collectible形式・他セラー年齢表記コピー禁止も
+ *  TSCA機能のtscaAiSystemPrompt()を共通基準として同様に移植している（2026-08-13対応。
+ *  TSCA機能自体は変更していない）。機械ガード（tscaFindInvalidAgeLabels流用）は
+ *  fedexFillDraftFromAi（AI応答受領時・警告）とfedexCommitItemDraft（品目追加時・
+ *  ブロック）で行う。 */
 function fedexCallAiJson(pageInfo, cb) {
   var lines = [
     'Product URL: ' + (pageInfo.url || ''),
@@ -5658,7 +5681,20 @@ function fedexCallAiJson(pageInfo, cb) {
     'You are helping prepare a US customs declaration (FedEx shipment) for a product exported from Japan to the US.',
     'Given the product page information below, return ONLY a JSON object with exactly these fields.',
     'ALL values must use half-width (ASCII) English letters, numbers, and punctuation only. No Japanese characters.',
-    '  "name_en": a concise English product name (a few words, no marketing language)',
+    '  "name_en": a concise English product name/title following these rules:',
+    '    - Start with the condition word "Used" or "New": use "Used" if the source indicates a secondhand',
+    '      item (中古, used, pre-owned, 目立った傷や汚れなし, etc.); use "New" ONLY if the source clearly',
+    '      states new/unused/unopened (新品, 未使用, 未開封, etc.); if undetermined, use "Used".',
+    '    - For toys and collectibles, use this exact format:',
+    '      <Condition> Collectible <short item type> "<product name>"[, by <brand>], Not for Children (Age NN+)',
+    '      Trading cards and card games always use ", Not for Children (Age 13+)"; ALL other toys and',
+    '      collectibles (anime/manga figures, character goods, plush toys, model kits, dolls, and toys',
+    '      meant for actual play) always use ", Not for Children (Age 15+)", even if originally marketed',
+    '      to young children. IGNORE any age label in the source information (e.g. "4+", "対象年齢6歳以上")',
+    '      — never copy it; use ONLY the fixed Age 13+ / Age 15+ values above.',
+    '    - For all other products (not a toy or collectible), use this format with NO "Collectible" and',
+    '      NO age statement: <Condition> <short item type> "<product name>"[, by <brand>]',
+    '    - No marketing language. Keep it a few words beyond the condition/format above.',
     '  "use_en": the product\'s intended use in English, e.g. "for retail sale". For collector items/hobby goods use something like "for collection/display" when that fits the context better than "for retail sale".',
     '  "materials_en": material composition in English.',
     '    - If the source information states materials (素材, 材質, "Material", etc.), use them, translated into standard English material names. This takes priority.',
@@ -5902,11 +5938,16 @@ function fedexRunAiFromUrl() {
 }
 
 /** AI応答を品目編集欄（下書き）に流し込む。まだ品目リストへは追加しない
- *  （TSCA機能と同様、必ず人が確認・修正してから「＋ 品目リストに追加」で確定する）。 */
+ *  （TSCA機能と同様、必ず人が確認・修正してから「＋ 品目リストに追加」で確定する）。
+ *  2026-08-13対応: name_enの年齢表記を機械ガード（tscaFindInvalidAgeLabels流用、
+ *  TSCA共通基準）で検査し、不正な表記があれば警告を表示する（ここではまだブロックしない。
+ *  実際の追加ブロックはfedexCommitItemDraft側で行う。この画面はAI応答受領直後で、
+ *  人が確認・修正する前提のため）。 */
 function fedexFillDraftFromAi(aiData) {
   state.fedex.makerAiSeq++;
   state.fedex.addressAiSeq++;
-  document.getElementById('fedexItemName').value = aiData.name_en || '';
+  var nameEn = aiData.name_en || '';
+  document.getElementById('fedexItemName').value = nameEn;
   document.getElementById('fedexItemUse').value = aiData.use_en || '';
   document.getElementById('fedexItemMaterials').value = aiData.materials_en || '';
   document.getElementById('fedexItemMakerName').value = aiData.maker_name_en || '';
@@ -5921,6 +5962,14 @@ function fedexFillDraftFromAi(aiData) {
   document.getElementById('fedexMakerUnknownHint').style.display = 'none';
   document.getElementById('fedexMakerBtnMsg').style.display = 'none';
   showFedexAiBadge(true, aiData.notes);
+
+  var badAge = tscaFindInvalidAgeLabels(nameEn);
+  if (badAge.length) {
+    var msgEl = document.getElementById('fedexAiMsg');
+    if (msgEl) {
+      showMessage(msgEl, 'error', TSCA_AGE_LABEL_ERROR + '（検出: ' + badAge.join(', ') + '）品目名（英語）を修正してから追加してください。');
+    }
+  }
 
   if (aiData.maker_name_en) {
     fedexLookupMaker(aiData.maker_name_en, function(found) { fedexApplyMakerLookupResult(found); });
@@ -6401,11 +6450,21 @@ function fedexRenderItemList() {
 
 /** 入力欄の内容を品目リストへ確定する。品目名が空の場合は何もせず false を返す。
  *  辞書に一致しなかったメーカー住所を人が手入力で確定させた場合（makerAddressSource==='manual'）
- *  はカスタムメーカー辞書へ自動保存する。 */
+ *  はカスタムメーカー辞書へ自動保存する。
+ *  2026-08-13対応: name_enの年齢表記を機械ガード（tscaFindInvalidAgeLabels流用、TSCA共通基準）
+ *  で検査し、不正な表記（13/15以外の年齢表記）があれば追加をブロックする。黙って書き換え・
+ *  削除はしない（TSCA機能と同じ方針）。この場合、戻り値は真偽値ではなく具体的なエラー
+ *  メッセージの文字列を返す（呼び出し側は `committed !== true` で失敗を判定し、
+ *  文字列ならそのままエラー表示に使う）。 */
 function fedexCommitItemDraft() {
   var raw = fedexReadDraftItem();
   var item = fedexEffectiveItem(raw);
   if (!item.name_en) return false;
+
+  var badAge = tscaFindInvalidAgeLabels(item.name_en);
+  if (badAge.length) {
+    return TSCA_AGE_LABEL_ERROR + '（検出: ' + badAge.join(', ') + '）';
+  }
 
   if (state.fedex.makerAddressSource === 'manual' && item.maker_name_en && item.maker_address_en) {
     fedexSaveCustomMaker(item.maker_name_en, item.maker_address_en);
@@ -7047,8 +7106,11 @@ window.addEventListener('load', function() {
   document.getElementById('fedexAddItemBtn').addEventListener('click', function() {
     var msgEl = document.getElementById('fedexAiMsg');
     var committed = fedexCommitItemDraft();
-    if (!committed) {
-      showMessage(msgEl, 'error', '品目名（英語）を入力してから追加してください。');
+    // 2026-08-13対応: fedexCommitItemDraft()はtrue（成功）以外に、年齢表記の機械ガードで
+    // ブロックした場合は具体的なエラーメッセージ文字列を返す（品目名が空のときはfalse）。
+    // 文字列ならそのままエラー表示に使い、falseの場合は従来どおりの汎用メッセージにする。
+    if (committed !== true) {
+      showMessage(msgEl, 'error', (typeof committed === 'string' && committed) || '品目名（英語）を入力してから追加してください。');
       return;
     }
     msgEl.style.display = 'none';
@@ -7394,10 +7456,16 @@ function gnrEnterForm() {
 // CPSC書類（GNR）: AIでDescriptionを生成
 // -------------------------------------------------------
 
-/** AI生成の共通システムプロンプト（Descriptionフィールド専用・1行・120字以内）。
- *  TSCA機能のtscaAiSystemPrompt()と条件（Used/New判定規則）の考え方を揃えつつ、
- *  GNR様式のDescriptionは材質構成の記載欄ではない（1行の簡潔な商品説明欄）ため、
- *  材質・割合の指示は含めない。 */
+/** AI生成の共通システムプロンプト（Descriptionフィールド専用・1行）。
+ *  TSCA機能のtscaAiSystemPrompt()を「共通基準」として、状態(Used/New)判定・年齢固定値・
+ *  Collectible形式・他セラー年齢表記コピー禁止の各ルールをGNR用に合わせて移植した
+ *  （2026-08-13 対応。TSCA機能自体（tscaAiSystemPrompt）は変更していない）。
+ *  文字数の絶対上限はプロンプトに書かない: 欄（247.9x15.0pt）に実際に収まるかどうかは
+ *  gnrGeneratePdf()が読み込んだ様式PDFの実寸とフォントサイズ実測（8ptまで縮小）で
+ *  判定・生成ブロックするため、Collectible形式で長くなった分もそちらが受け止める
+ *  （旧: プロンプト内に「120字以内」という実態と合わない固定値があったため削除した）。
+ *  年齢表記の機械ガードは既存のtscaFindInvalidAgeLabels()をそのまま流用する
+ *  （gnrGenerateDescription/gnrRunAiFromPageFlow/gnrGoToConfirm参照）。 */
 function gnrAiSystemPrompt() {
   return [
     'You are helping prepare a US CPSC (Consumer Product Safety Commission) "Certificate of Compliance —',
@@ -7406,21 +7474,36 @@ function gnrAiSystemPrompt() {
     'Given the product information below (it may be in Japanese), write ONE single-line factual English',
     'product description for the "Description" field of the form.',
     'Rules:',
-    '- ONE line only (no line breaks). NEVER exceed 120 characters in total, including spaces and punctuation.',
-    '  This is an ABSOLUTE requirement, not a target.',
-    '- Factual only. No exaggeration, no marketing or promotional language.',
+    '- ONE line only (no line breaks). Factual only. No exaggeration, no marketing or promotional language.',
     '- Start with the condition word "Used" or "New":',
     '  * Use "Used" if the source indicates a secondhand item (中古, used, pre-owned, 目立った傷や汚れなし, etc.).',
     '  * Use "New" ONLY if the source clearly states the item is new/unused/unopened (新品, 未使用, 未開封, etc.).',
     '  * If the condition cannot be determined, use "Used" (items handled by this tool come from Japanese',
     '    secondhand marketplaces).',
-    '- Follow the condition word with a short factual item type and product name in quotes, for example:',
+    '- For toys and collectibles (see the age statement rules below), use this exact format:',
+    '  <Condition> Collectible <short item type> "<product name>"[, by <brand>], Not for Children (Age NN+)',
+    '- For all other products (kitchenware, clothing, electronics, etc.), use this format with NO',
+    '  "Collectible" and NO age statement:',
+    '  <Condition> <short item type> "<product name>"[, by <brand>]',
+    '- Age statement rules (FIXED values, appended at the END, only for toys/collectibles):',
+    '  * Trading cards and card games: append ", Not for Children (Age 13+)". Always exactly 13+.',
+    '  * ALL other toys and collectibles - anime/manga figures, character goods, plush toys, model kits,',
+    '    dolls, AND toys meant for actual play: append ", Not for Children (Age 15+)". These are exported',
+    '    as collector items for adults, so Age 15+ is ALWAYS used, even for products originally marketed',
+    '    to young children.',
+    '  * IGNORE any age label that appears in the source information (e.g. "4+", "Ages 3 and up",',
+    '    "対象年齢6歳以上"). Such labels come from the manufacturer or other sellers and MUST NOT be',
+    '    copied. Use ONLY the fixed values above: Age 13+ for trading cards and card games, Age 15+',
+    '    for every other toy or collectible.',
+    '  * Omit the age statement (and the word "Collectible") when the product is not a toy or collectible.',
+    '- Do NOT include model numbers, materials, or percentages. Keep it short and factual.',
+    'Examples:',
+    '  Used Collectible figure "Son Goku", Not for Children (Age 15+)',
+    '  Used Collectible trading card "Pikachu", Not for Children (Age 13+)',
     '  Used plastic kitchen storage container "XYZ"',
-    '  Used cotton tote bag',
     '  New ceramic coffee mug "Sakura Blossom"',
-    '- Do NOT include brand names, model numbers, materials, or percentages. Keep it short and factual.',
     'Return ONLY a JSON object with exactly the key "description". No markdown, no code fences, no explanation.',
-    'Example output: {"description": "Used plastic kitchen storage container \\"XYZ\\""}'
+    'Example output: {"description": "Used Collectible figure \\"Son Goku\\", Not for Children (Age 15+)"}'
   ].join('\n');
 }
 
@@ -7481,10 +7564,22 @@ function gnrCallAiJson(systemPrompt, userContent, cb) {
   });
 }
 
+/** Descriptionの年齢表記を機械検査する（2026-08-13 対応。TSCAの共通基準をGNRへ適用）。
+ *  TSCA機能のtscaFindInvalidAgeLabels()をそのまま流用する（GNR独自の正規表現は
+ *  持たない＝TSCA側の判定基準・実装と完全に同じになることを保証し、tscaFindInvalidAgeLabels
+ *  自体は変更しない）。不正な年齢表記があればエラーメッセージ文字列を返す。問題なければnull。 */
+function gnrFindAgeLabelError(description) {
+  var bad = tscaFindInvalidAgeLabels(description);
+  if (!bad.length) return null;
+  return TSCA_AGE_LABEL_ERROR + '（検出: ' + bad.join(', ') + '）';
+}
+
 /** 「✨ AIで英語説明を生成」ボタン: Description欄に入力済みの内容（日本語可）を
- *  元情報として、AIで1行・120字以内の英語Descriptionを生成して同じ欄にセットする。
+ *  元情報として、AIで1行の英語Descriptionを生成して同じ欄にセットする。
  *  TSCA機能のtscaGenerateDescription()と同じ「入力欄の内容を元情報として使い、
- *  結果を同じ欄に上書きする」パターンを踏襲する。 */
+ *  結果を同じ欄に上書きする」パターンを踏襲する。
+ *  文字数上限チェックはここでは目安（GNR_DESCRIPTION_GUIDE_MAX）による警告のみ。
+ *  実際に様式の欄に収まるかの最終判定・生成ブロックはgnrGeneratePdf()が行う。 */
 function gnrGenerateDescription() {
   var msgEl = document.getElementById('gnrAiMsg');
   var btn = document.getElementById('gnrAiDescBtn');
@@ -7512,6 +7607,13 @@ function gnrGenerateDescription() {
     textEl.value = result.description;
     gnrUpdateDescCount();
     showGnrAiResultBadge(true);
+    // 年齢表記の機械ガード（TSCA共通基準）。黙って書き換えない: 検出時はエラー表示のみで、
+    // 欄には生成結果をそのまま残す（修正はユーザーが行う）。
+    var ageErr = gnrFindAgeLabelError(result.description);
+    if (ageErr) {
+      showMessage(msgEl, 'error', ageErr);
+      return;
+    }
     if (result.description.length > GNR_DESCRIPTION_GUIDE_MAX) {
       showMessage(msgEl, 'warn',
         'AI生成結果が目安（約' + GNR_DESCRIPTION_GUIDE_MAX + '文字）を超えています（現在' + result.description.length +
@@ -7528,7 +7630,8 @@ function gnrGenerateDescription() {
 
 /** 記入フォームの内容を検証し、確認画面へ進む。
  *  Description必須、Submitter company name必須（GNR_REQUIRED_FIELD_NAMESのうち
- *  ユーザーが直接入力する項目）をここでチェックする。黙って切り捨てたり書き換えたりはせず、
+ *  ユーザーが直接入力する項目）、および年齢表記の機械ガード（TSCA共通基準。
+ *  2026-08-13追加）をここでチェックする。黙って切り捨てたり書き換えたりはせず、
  *  問題があればアラートで知らせて止める。
  *  Descriptionの文字数上限チェックはここでは行わない（2026-08-13
  *  実機テストで発覚した不具合対応）。様式の欄に収まるかどうかは実際に読み込んだ
@@ -7549,6 +7652,11 @@ function gnrGoToConfirm() {
 
   if (!description) {
     alert('Description（商品説明）を入力してください。');
+    return;
+  }
+  var ageErr = gnrFindAgeLabelError(description);
+  if (ageErr) {
+    alert(ageErr);
     return;
   }
   if (!companyName) {
@@ -8032,6 +8140,13 @@ function gnrRunAiFromPageFlow(btn, msg) {
       descEl.value = result.description;
       gnrUpdateDescCount();
       showGnrAiResultBadge(true);
+      // 年齢表記の機械ガード（TSCA共通基準）。黙って書き換えない: 検出時はエラー表示のみで、
+      // 欄には生成結果をそのまま残す（修正はユーザーが行う）。
+      var ageErr = gnrFindAgeLabelError(result.description);
+      if (ageErr) {
+        showMessage(aiMsg2, 'error', ageErr);
+        return;
+      }
       if (result.description.length > GNR_DESCRIPTION_GUIDE_MAX) {
         showMessage(aiMsg2, 'warn',
           'AI生成結果が目安（約' + GNR_DESCRIPTION_GUIDE_MAX + '文字）を超えています（現在' + result.description.length +
