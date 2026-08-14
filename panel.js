@@ -5319,6 +5319,31 @@ function getWatchPageInfo(cb) {
           }
           return '';
         }
+        // 画像URL抽出（最大max件、httpsのみ）。サムネイルらしきURLは末尾に回して大きい画像を優先
+        function getImages(selectors, max) {
+          var found = [];
+          function pushUrl(raw) {
+            if (!raw) return;
+            var u = raw.trim();
+            if (u.indexOf(',') !== -1 || u.indexOf(' ') !== -1) {
+              var candidates = u.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+              if (candidates.length) u = candidates[candidates.length - 1].split(' ')[0];
+            }
+            if (u.indexOf('//') === 0) u = 'https:' + u;
+            if (u.indexOf('https://') !== 0) return;
+            if (found.indexOf(u) === -1) found.push(u);
+          }
+          for (var i = 0; i < selectors.length; i++) {
+            var els = document.querySelectorAll(selectors[i]);
+            for (var j = 0; j < els.length; j++) {
+              var el = els[j];
+              pushUrl(el.getAttribute('src') || el.currentSrc || el.getAttribute('data-src') || el.getAttribute('srcset') || el.getAttribute('data-srcset'));
+            }
+          }
+          var big = found.filter(function (u) { return !/thumb|_s\.|small/i.test(u); });
+          var small = found.filter(function (u) { return /thumb|_s\.|small/i.test(u); });
+          return big.concat(small).slice(0, max);
+        }
 
         // JSON-LD Product schema
         var jsonldProduct = null;
@@ -5335,6 +5360,7 @@ function getWatchPageInfo(cb) {
         }
 
         var productName = '', brand = '', condition = '', description = '', price = '', currency = '';
+        var imageSelectors = [];
 
         if (host.includes('mercari.com')) {
           productName = getText(['h1[class*="name"]', 'h1[data-testid="name"]', 'p[data-testid="product-name"]', 'h1']);
@@ -5343,17 +5369,20 @@ function getWatchPageInfo(cb) {
           brand       = getText(['[data-testid="brand"]', '[class*="brand"]']);
           price       = getText(['[data-testid="price"]', '[class*="price"] span', '[class*="ItemPrice"]']).replace(/[^0-9]/g, '');
           currency    = 'JPY';
+          imageSelectors = ['[data-testid="image-0"] img', '[data-testid^="image-"] img', 'picture img', 'main img'];
         } else if (host.includes('auctions.yahoo.co.jp') || host.includes('buyee.jp')) {
           productName = getText(['h1[class*="Product__title"]', '.Product__title', 'h1']);
           description = getText(['.ProductExplanation__itemDescription', '.ProductDetail__description', '[class*="description"]']).substring(0, 300);
           condition   = getText(['.ProductDetail__condition', '[class*="condition"]']);
           price       = getText(['.Price__value', '.Auction__price', '.ProductDetail__price', '[class*="price"]']).replace(/[^0-9]/g, '');
           currency    = 'JPY';
+          imageSelectors = ['.ProductImage__image img', '#photoImg img', '.itemPhoto img', '#Photos img', 'main img'];
         } else if (host.includes('hardoff.co.jp') || host.includes('bookoff.co.jp')) {
           productName = getText(['h1', '.item-name', '.product-name']);
           description = getText(['.item-detail', '.product-detail', '.description']).substring(0, 300);
           price       = getText(['.price', '.item-price', '[class*="price"]']).replace(/[^0-9]/g, '');
           currency    = 'JPY';
+          imageSelectors = ['.item-photo img', '.photo-main img', '.product-image img', 'main img'];
         } else if (host.includes('ebay.com')) {
           productName = getText(['h1#itemTitle', 'h1[itemprop="name"]', 'h1']);
           description = getText(['#viTabs_0_is', '#itemDescriptionURL', '[itemprop="description"]']).substring(0, 300);
@@ -5361,6 +5390,7 @@ function getWatchPageInfo(cb) {
           condition   = getText(['#condText', '[itemprop="itemCondition"]']);
           price       = getText(['.x-price-primary span', '[itemprop="price"]', '#prcIsum']).replace(/[^0-9.]/g, '');
           currency    = 'USD';
+          imageSelectors = ['#icImg', '.ux-image-carousel-item img', '.ux-image-magnify__image img'];
         }
 
         if (jsonldProduct) {
@@ -5373,7 +5403,22 @@ function getWatchPageInfo(cb) {
         if (!productName) productName = getText(['h1']) || getMeta(['og:title']) || document.title;
         if (!description) description = getMeta(['og:description', 'description']).substring(0, 300);
 
-        return { url: url, host: host, productName: productName, brand: brand, condition: condition, description: description, price: price, currency: currency };
+        // 商品メイン画像URL（最大3枚、https限定）。サイト別セレクタ→JSON-LD image→og:imageの順でフォールバック
+        var imageUrls = getImages(imageSelectors, 3);
+        if (imageUrls.length < 3 && jsonldProduct && jsonldProduct.image) {
+          var jsonldImages = Array.isArray(jsonldProduct.image) ? jsonldProduct.image : [jsonldProduct.image];
+          for (var ji = 0; ji < jsonldImages.length && imageUrls.length < 3; ji++) {
+            var jUrl = typeof jsonldImages[ji] === 'string' ? jsonldImages[ji] : ((jsonldImages[ji] && jsonldImages[ji].url) || '');
+            if (jUrl.indexOf('https://') === 0 && imageUrls.indexOf(jUrl) === -1) imageUrls.push(jUrl);
+          }
+        }
+        if (imageUrls.length < 3) {
+          var ogImage = getMeta(['og:image']);
+          if (ogImage.indexOf('https://') === 0 && imageUrls.indexOf(ogImage) === -1) imageUrls.push(ogImage);
+        }
+        imageUrls = imageUrls.slice(0, 3);
+
+        return { url: url, host: host, productName: productName, brand: brand, condition: condition, description: description, price: price, currency: currency, imageUrls: imageUrls };
       }
     }, function (results) {
       if (chrome.runtime.lastError) { cb(null, chrome.runtime.lastError.message); return; }
@@ -5402,7 +5447,7 @@ function callOpenAIWatch(pageInfo, cb) {
     '  "reference": model number or reference (e.g. "BM8180-03E")',
     '  "movementType": one of exactly: "Quartz", "Automatic", "Manual"',
     '  "displayType": one of exactly: "Analog", "Digital", "Analog-Digital"',
-    '  "bandMaterial": one of exactly: "Textile", "Metal", "Leather", "No Band"',
+    '  "bandMaterial": one of exactly: "Textile", "Metal", "Leather", "No Band", "Unknown"',
     '  "bandDetail": specific band material (e.g. "Stainless Steel", "Leather (Cow)", "Rubber")',
     '  "caseMaterial": one of exactly: "NOT Gold/Silver Plated", "Gold/Silver Plated", "Metal Clad w/Precious Metal", "Wholly of Precious Metal", "Other"',
     '  "caseDetail": specific case base material (e.g. "Stainless Steel", "Titanium", "Brass")',
@@ -5411,15 +5456,27 @@ function callOpenAIWatch(pageInfo, cb) {
     '  "country": country of origin, default "Japan" for Japanese marketplace listings',
     '  "htsus": suggested HTSUS code, 10 digits no dots (e.g. "9102215040"). Use 9102215040 for quartz non-precious-case wristwatch, 9102217010 for mechanical non-precious-case.',
     '  "reason": one sentence in Japanese summarizing what was identified',
+    'Set bandMaterial to "Unknown" only when neither the text nor the images make it clear; never guess.',
     'Return ONLY the JSON. No markdown, no explanation.'
   ].join('\n');
+
+  var imageUrls = Array.isArray(pageInfo.imageUrls)
+    ? pageInfo.imageUrls.filter(function (u) { return typeof u === 'string' && u.indexOf('https://') === 0; }).slice(0, 3)
+    : [];
+  var userMessageContent = userContent;
+  if (imageUrls.length > 0) {
+    userMessageContent = [{ type: 'text', text: userContent }];
+    imageUrls.forEach(function (u) {
+      userMessageContent.push({ type: 'image_url', image_url: { url: u, detail: 'low' } });
+    });
+  }
 
   fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.openaiKey },
     body: JSON.stringify({
       model: 'gpt-5.4',
-      messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userContent }],
+      messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMessageContent }],
       max_completion_tokens: 400
     })
   })
@@ -5460,8 +5517,12 @@ function fillFromAi(aiData) {
     set('watch_di_displayType', aiData.displayType);
   }
   var validBand = ['Textile', 'Metal', 'Leather', 'No Band'];
+  var bandWarning = false;
   if (aiData.bandMaterial && validBand.indexOf(aiData.bandMaterial) !== -1) {
     set('watch_di_bandMaterial', aiData.bandMaterial);
+  } else if (aiData.bandMaterial) {
+    // "Unknown" または既知4値以外 → 選択肢はセットせず警告のみ表示
+    bandWarning = true;
   }
   set('watch_di_bandDetail', aiData.bandDetail || '');
 
@@ -5508,8 +5569,12 @@ function fillFromAi(aiData) {
   var badge = document.getElementById('watch_aiResultBadge');
   if (badge) {
     var reasonText = aiData.reason ? '💡 ' + aiData.reason : '';
+    var bandWarningHtml = bandWarning
+      ? '<div class="ai-reason" style="color:#b3261e;">⚠ バンドの有無・素材をページから判別できませんでした。商品画像を目で確認し、バンド欄を選択してください。</div>'
+      : '';
     badge.innerHTML = '✨ <strong>AI入力補助</strong> — 内容を確認・修正してください。<strong>価格は必ず手入力してください</strong>（申告価格と出品価格が異なる場合があります）。' +
-      (reasonText ? '<div class="ai-reason">' + escapeHtml(reasonText) + '</div>' : '');
+      (reasonText ? '<div class="ai-reason">' + escapeHtml(reasonText) + '</div>' : '') +
+      bandWarningHtml;
     badge.style.display = 'block';
   }
 
@@ -6683,10 +6748,42 @@ function fedexBuildMapping(questions) {
         matched = !!value;
       }
     }
-    return { title: q.title, type: q.type, options: q.options || [], fieldKey: fieldKey, value: value, matched: matched };
+    return { title: q.title, type: q.type, options: q.options || [], fieldKey: fieldKey, value: value, matched: matched, edited: false };
   });
   state.fedex.mapping = mapping;
   fedexRenderMappingTable();
+}
+
+/** 対応表画面に入るとき、タブの再読み取りはせずキャッシュ済みの state.fedex.formQuestions
+ *  に対応する state.fedex.mapping の回答値だけを現在の入力データ（AWB欄・品目リスト・
+ *  メール欄等）から再計算する（fedexBuildMappingの値計算ロジックを再実行）。
+ *  2026-08-14 対応: fedexGoToMappingが対応表既存時にfedexRenderMappingTable(true)で
+ *  保存済みの表を再表示するだけで値を再計算していなかったため、AWB・製造会社・住所を
+ *  入力してから対応表画面に進んでも古い（空の）値のまま「手持ちデータがありません」と
+ *  表示され続けるバグの修正。
+ *  ユーザーが対応表画面のセルを手編集した行（edited===true）は上書きせずそのまま残す。
+ *  戻り値: 非edited行のいずれかでvalueまたはmatchedが変化していればtrue。 */
+function fedexRecomputeMapping() {
+  var changed = false;
+  state.fedex.mapping = state.fedex.mapping.map(function(row) {
+    if (row.edited) return row;
+    var fieldKey = row.fieldKey;
+    var value = '';
+    var matched = false;
+    if (fieldKey) {
+      var computed = fedexComputeAnswerValue(fieldKey);
+      if (row.type === 'radio') {
+        value = fedexPickRadioOption(row.options, computed);
+        matched = !!value;
+      } else {
+        value = computed;
+        matched = !!value;
+      }
+    }
+    if (value !== row.value || matched !== row.matched) changed = true;
+    return { title: row.title, type: row.type, options: row.options, fieldKey: fieldKey, value: value, matched: matched, edited: false };
+  });
+  return changed;
 }
 
 /** 対応表テーブル（state.fedex.mapping）を描画する。
@@ -6729,14 +6826,14 @@ function fedexRenderMappingTable(preserveGate) {
         if (o === row.value) opt.selected = true;
         sel.appendChild(opt);
       });
-      sel.addEventListener('change', function() { state.fedex.mapping[idx].value = this.value; });
+      sel.addEventListener('change', function() { state.fedex.mapping[idx].value = this.value; state.fedex.mapping[idx].edited = true; });
       tdV.appendChild(sel);
     } else {
       var ta = document.createElement('textarea');
       ta.className = 'fedex-mapping-input';
       ta.rows = 2;
       ta.value = row.value;
-      ta.addEventListener('input', function() { state.fedex.mapping[idx].value = this.value; });
+      ta.addEventListener('input', function() { state.fedex.mapping[idx].value = this.value; state.fedex.mapping[idx].edited = true; });
       tdV.appendChild(ta);
     }
 
@@ -6994,12 +7091,17 @@ function fedexRenderResults(results) {
  *  2026-08-13 対応: 以前は毎回 fedexReadFormQuestions() を強制実行しており、
  *  フォームタブが前面にない（品目編集のため他タブ・他画面を見ている等）だけで
  *  既に作成済みの対応表が丸ごと破棄され、後戻りできなくなる実害があった。
- *  state.fedex.mapping が既にあれば再読み取りはせず、既存の対応表をそのまま
- *  再描画して表示するだけにする（fedexRenderMappingTable(true)＝確認チェック・
- *  書き込みボタンの状態も維持し、黙って外さない）。これにより、対応表の
- *  テキスト欄に手入力した内容や選択済みのラジオ値も保持される。
- *  内容を最新化したい場合は「質問を読み取り直す」ボタン（fedexReadFormQuestionsを
- *  直接呼ぶ）が引き続き明示的な再読み取りの入口として機能し、その場合は
+ *  state.fedex.mapping が既にあれば再読み取りはせず、既存の質問セット
+ *  （state.fedex.formQuestions）に対して回答値だけを現在の入力データから
+ *  再計算する（fedexRecomputeMapping。タブへは一切アクセスしない）。
+ *  2026-08-14 対応: 上記の再描画のみでは、対応表を一度作った後にAWB・製造会社・
+ *  住所欄を入力しても値が古い（空の）まま残るバグがあったため、この再計算を追加した。
+ *  ユーザーが対応表画面で手編集したセルはfedexRecomputeMapping内でedited判定により
+ *  上書きされない。再計算の結果いずれかの値が変わった場合は
+ *  fedexRenderMappingTable()（確認ゲートをリセット）、変わらなければ
+ *  fedexRenderMappingTable(true)（確認チェック・書き込みボタンの状態を維持）で描画する。
+ *  「質問を読み取り直す」ボタン（fedexReadFormQuestionsを直接呼ぶ）は引き続き
+ *  タブから質問ごと再読み取りする明示的な入口として機能し、その場合は
  *  fedexBuildMapping経由で対応表が作り直され、確認ゲートも従来どおりリセットされる。
  *  対応表がまだ無い（初回）場合は従来どおり読み取りから行う。 */
 function fedexGoToMapping() {
@@ -7009,7 +7111,8 @@ function fedexGoToMapping() {
   if (state.fedex.mapping) {
     var msgEl = document.getElementById('fedexMappingMsg');
     if (msgEl) msgEl.style.display = 'none';
-    fedexRenderMappingTable(true);
+    var changed = fedexRecomputeMapping();
+    fedexRenderMappingTable(!changed);
     return;
   }
   fedexReadFormQuestions();
