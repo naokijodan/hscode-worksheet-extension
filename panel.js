@@ -4059,6 +4059,15 @@ function setupDirectForm() {
     updateHtsHint();
   });
 
+  // AI読み取りの不確実フィールド警告（赤枠・点滅・インライン警告）は、
+  // ユーザーがそのフィールドに入力・選択した時点で解除する（2026-08-14対応）
+  document.getElementById('watch_di_jewelCount').addEventListener('input', function () {
+    clearWatchAiFieldWarning('watch_di_jewelCount');
+  });
+  document.getElementById('watch_di_bandMaterial').addEventListener('change', function () {
+    clearWatchAiFieldWarning('watch_di_bandMaterial');
+  });
+
   // 製造国一括セット
   document.getElementById('watch_di_countryMain').addEventListener('change', function () {
     applyMainCountry();
@@ -5526,9 +5535,47 @@ function callOpenAIWatch(pageInfo, cb) {
   .catch(function (e) { cb(e, null); });
 }
 
+/** AI読み取り結果が不確実なフィールド（バンド・石数）を強調表示する。
+ *  2026-08-14対応: 画面上部のAIバッジ内の警告文だけでは気づかれにくいという実機フィードバック
+ *  を受け、対象フィールド自体に赤枠＋ソフトな点滅（.watch-ai-field-warn、panel.css）を付け、
+ *  直下にインライン警告div（.watch-ai-inline-warn）を挿入する。上部バッジのサマリ表示はこの
+ *  関数とは別に従来どおり残す。同じフィールドに対して複数回呼ばれても、既存のインライン警告
+ *  divを使い回すだけで二重に挿入はしない。 */
+function setWatchAiFieldWarning(fieldId, message) {
+  var field = document.getElementById(fieldId);
+  if (!field) return;
+  field.classList.add('watch-ai-field-warn');
+  var warnEl = document.getElementById(fieldId + '_aiWarn');
+  if (!warnEl) {
+    warnEl = document.createElement('div');
+    warnEl.id = fieldId + '_aiWarn';
+    warnEl.className = 'watch-ai-inline-warn';
+    field.insertAdjacentElement('afterend', warnEl);
+  }
+  warnEl.textContent = message;
+}
+
+/** setWatchAiFieldWarningで付けた赤枠・点滅・インライン警告divを解除する。
+ *  ユーザーがそのフィールドに入力・選択した時（setupDirectFormのinput/changeイベント）と、
+ *  再度AI読み取りする直前（fillFromAiの先頭、前回状態のクリア）の両方から呼ばれる。 */
+function clearWatchAiFieldWarning(fieldId) {
+  var field = document.getElementById(fieldId);
+  if (field) field.classList.remove('watch-ai-field-warn');
+  var warnEl = document.getElementById(fieldId + '_aiWarn');
+  if (warnEl && warnEl.parentNode) warnEl.parentNode.removeChild(warnEl);
+}
+
 function fillFromAi(aiData) {
   // 直接入力タブに切り替え
   switchInputMode('direct');
+
+  // 前回のAI読み取りで付いたフィールド警告（赤枠・点滅・インライン警告文）をクリアしてから
+  // 今回の判定結果で作り直す（前回の警告が残らないようにする。2026-08-14対応）
+  clearWatchAiFieldWarning('watch_di_jewelCount');
+  clearWatchAiFieldWarning('watch_di_bandMaterial');
+
+  var bandWarningText  = 'バンドの有無・素材をページから判別できませんでした。商品画像を目で確認し、バンド欄を選択してください。';
+  var jewelWarningText = '石数を読み取れませんでした。商品ページを確認して入力してください。';
 
   // 各フィールドに流し込む
   var set = function (id, val) {
@@ -5553,6 +5600,7 @@ function fillFromAi(aiData) {
     set('watch_di_jewelCount', jc);
   } else if (aiData.movementType === 'Automatic' || aiData.movementType === 'Manual') {
     jewelWarning = true;
+    setWatchAiFieldWarning('watch_di_jewelCount', '⚠ ' + jewelWarningText);
   }
 
   var validDisplay = ['Analog', 'Digital', 'Analog-Digital'];
@@ -5566,6 +5614,7 @@ function fillFromAi(aiData) {
   } else if (aiData.bandMaterial) {
     // "Unknown" または既知4値以外 → 選択肢はセットせず警告のみ表示
     bandWarning = true;
+    setWatchAiFieldWarning('watch_di_bandMaterial', '⚠ ' + bandWarningText);
   }
   set('watch_di_bandDetail', aiData.bandDetail || '');
 
@@ -5608,15 +5657,15 @@ function fillFromAi(aiData) {
   // HTSUS候補ヒントも更新
   updateHtsHint();
 
-  // AIバッジ表示
+  // AIバッジ表示（上部のサマリ表示。フィールド直下のインライン警告とは別に従来どおり残す）
   var badge = document.getElementById('watch_aiResultBadge');
   if (badge) {
     var reasonText = aiData.reason ? '💡 ' + aiData.reason : '';
     var bandWarningHtml = bandWarning
-      ? '<div class="ai-reason" style="color:#b3261e;">⚠ バンドの有無・素材をページから判別できませんでした。商品画像を目で確認し、バンド欄を選択してください。</div>'
+      ? '<div class="ai-reason" style="color:#b3261e;">⚠ ' + escapeHtml(bandWarningText) + '</div>'
       : '';
     var jewelWarningHtml = jewelWarning
-      ? '<div class="ai-reason" style="color:#b3261e;">⚠ 石数を読み取れませんでした。商品ページを確認して入力してください。</div>'
+      ? '<div class="ai-reason" style="color:#b3261e;">⚠ ' + escapeHtml(jewelWarningText) + '</div>'
       : '';
     badge.innerHTML = '✨ <strong>AI入力補助</strong> — 内容を確認・修正してください。<strong>価格は必ず手入力してください</strong>（申告価格と出品価格が異なる場合があります）。' +
       (reasonText ? '<div class="ai-reason">' + escapeHtml(reasonText) + '</div>' : '') +
@@ -5628,6 +5677,16 @@ function fillFromAi(aiData) {
   // AI読み取り完了後は「印刷プレビューへ直接進む」ボタンを表示
   var printDirectBtn = document.getElementById('watch_di_printDirectBtn');
   if (printDirectBtn) printDirectBtn.style.display = 'block';
+
+  // 警告フィールドが画面外の場合もあるため、最初の警告フィールドへスクロールする
+  // （フォーム内での上下順は石数欄の方がバンド欄より上のため、石数を優先する）
+  var firstWarnFieldId = jewelWarning ? 'watch_di_jewelCount' : (bandWarning ? 'watch_di_bandMaterial' : null);
+  if (firstWarnFieldId) {
+    var firstWarnField = document.getElementById(firstWarnFieldId);
+    if (firstWarnField && firstWarnField.scrollIntoView) {
+      firstWarnField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
 }
 
 // ---------------------------------------------------------

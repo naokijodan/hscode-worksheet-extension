@@ -1230,6 +1230,39 @@ select:focus {
   margin-top: 4px;
 }
 
+/* ===========================================
+   Watch AI読み取り: フィールド警告（バンド・石数が不明時）
+   2026-08-14対応: 上部のAIバッジ内の警告文だけでは気づかれにくいという実機フィードバック
+   により追加。該当フィールド自体を赤枠＋ソフトな点滅で強調し、直下にインライン警告文を出す。
+   =========================================== */
+.watch-ai-field-warn {
+  border: 2px solid #b3261e !important;
+  animation: watch-ai-warn-pulse 1.2s ease-in-out infinite;
+}
+@keyframes watch-ai-warn-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(179, 38, 30, 0.35); }
+  50%      { box-shadow: 0 0 6px 2px rgba(179, 38, 30, 0.35); }
+}
+.watch-ai-inline-warn {
+  font-size: 11px;
+  color: #b71c1c;
+  background: #fce4e4;
+  border: 1px solid #ef9a9a;
+  border-radius: 3px;
+  padding: 4px 8px;
+  margin-top: 4px;
+}
+@media (prefers-color-scheme: dark) {
+  .watch-ai-field-warn {
+    border-color: #ff6659 !important;
+  }
+  .watch-ai-inline-warn {
+    color: #ffab91;
+    background: #3a1a1a;
+    border-color: #b71c1c;
+  }
+}
+
 .watch-title-preview {
   font-size: 11px;
   color: #2e7d32;
