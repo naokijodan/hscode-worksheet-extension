@@ -5477,6 +5477,7 @@ function callOpenAIWatch(pageInfo, cb) {
     '  "brand": watch brand name (e.g. "Citizen", "Seiko", "Casio")',
     '  "reference": model number or reference (e.g. "BM8180-03E")',
     '  "movementType": one of exactly: "Quartz", "Automatic", "Manual"',
+    '  "jewelCount": positive integer number of jewels if explicitly stated in the text or images (e.g. "23 Jewels", "17石"), otherwise null. Never guess.',
     '  "displayType": one of exactly: "Analog", "Digital", "Analog-Digital"',
     '  "bandMaterial": one of exactly: "Textile", "Metal", "Leather", "No Band", "Unknown"',
     '  "bandDetail": specific band material (e.g. "Stainless Steel", "Leather (Cow)", "Rubber")',
@@ -5543,6 +5544,17 @@ function fillFromAi(aiData) {
   if (aiData.movementType && validMovement.indexOf(aiData.movementType) !== -1) {
     set('watch_di_movementType', aiData.movementType);
   }
+
+  // 石数（Jewels）。正の整数(1〜99)のときのみセット。それ以外（null・0・文字列・範囲外）は未セット。
+  // 機械式（Automatic/Manual）なのに取得できなかった場合のみ警告対象とする（Quartzは警告なし）。
+  var jewelWarning = false;
+  var jc = aiData.jewelCount;
+  if (typeof jc === 'number' && Number.isInteger(jc) && jc >= 1 && jc <= 99) {
+    set('watch_di_jewelCount', jc);
+  } else if (aiData.movementType === 'Automatic' || aiData.movementType === 'Manual') {
+    jewelWarning = true;
+  }
+
   var validDisplay = ['Analog', 'Digital', 'Analog-Digital'];
   if (aiData.displayType && validDisplay.indexOf(aiData.displayType) !== -1) {
     set('watch_di_displayType', aiData.displayType);
@@ -5603,9 +5615,13 @@ function fillFromAi(aiData) {
     var bandWarningHtml = bandWarning
       ? '<div class="ai-reason" style="color:#b3261e;">⚠ バンドの有無・素材をページから判別できませんでした。商品画像を目で確認し、バンド欄を選択してください。</div>'
       : '';
+    var jewelWarningHtml = jewelWarning
+      ? '<div class="ai-reason" style="color:#b3261e;">⚠ 石数を読み取れませんでした。商品ページを確認して入力してください。</div>'
+      : '';
     badge.innerHTML = '✨ <strong>AI入力補助</strong> — 内容を確認・修正してください。<strong>価格は必ず手入力してください</strong>（申告価格と出品価格が異なる場合があります）。' +
       (reasonText ? '<div class="ai-reason">' + escapeHtml(reasonText) + '</div>' : '') +
-      bandWarningHtml;
+      bandWarningHtml +
+      jewelWarningHtml;
     badge.style.display = 'block';
   }
 
