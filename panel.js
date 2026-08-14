@@ -123,6 +123,30 @@ function escapeHtml(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+/** AI応答のタイトル/説明文を受け取る全箇所（HS分析のタイトル、TSCA/GNR/FedExの
+ *  タイトル・説明文）で共通に通す軽量サニタイズ。2026-08-14対応: プロンプトの書式説明
+ *  "[<Brand>]"（ブランド任意の意味）をAIが文字通り解釈し、ブランド不明時に
+ *  "[Unbranded]" のようなプレースホルダー語を実際のタイトルへ出力してしまう症状の
+ *  機械ガード。プレースホルダー語・空の角括弧[]を削るだけで、言い換えは一切しない。
+ *  単語境界マッチのため一部一致（例: "Genericon"）は誤爆しない。
+ *  除去の結果が空文字になる場合は、黙って全消ししないよう元の文字列（前後空白のみ整形）
+ *  をそのまま返す。 */
+function sanitizeBrandPlaceholder(text) {
+  var s = String(text || '');
+  if (!s) return s;
+  var out = s
+    .replace(/\[\s*Unbranded\s*\]/gi, '')
+    .replace(/\[\s*No\s*Brand\s*\]/gi, '')
+    .replace(/\[\s*Generic(?:\s+brand)?\s*\]/gi, '')
+    .replace(/\bUnbranded\b/gi, '')
+    .replace(/\bNo\s+Brand\b/gi, '')
+    .replace(/\bGeneric\s+brand\b/gi, '')
+    .replace(/\[\s*\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return out || s.replace(/\s+/g, ' ').trim();
+}
+
 /** Open USITC HTS search for the current code, or alert if no code set. */
 function openVerifyHts() {
   var code = (state.leafData && state.leafData.htsus) ? state.leafData.htsus : '';
@@ -2172,7 +2196,7 @@ function callOpenAI(pageInfo, cb) {
     '  "description": official English HTS category description (e.g. "Toys representing animals or non-human creatures")',
     '  "brand": brand name extracted from product info, or "Generic" if unknown',
     '  "model": model number or product/character name',
-    '  "title": customs declaration title in plain English, max 40 chars, no marketing language, no Japanese characters. Format: "[Condition] [Brand] [Character/Model] [Item Type] [Age]". Start the title with the condition word "Used" or "New" as the very first word: use "Used" if the source indicates a secondhand item (中古, used, pre-owned, 目立った傷や汚れなし, etc.); use "New" ONLY if the source clearly states the item is new/unused/unopened (新品, 未使用, 未開封, etc.); if the condition cannot be determined, use "Used" (items handled by this tool come from Japanese secondhand marketplaces). Always include brand name and character or model name when available. Append age requirement at the end when applicable: use "For Ages 15+" for anime/manga figures and collectibles (not toys for actual play), "For Ages 13+" for trading cards and card games, "For Ages X+" for toys with a clear target age. IGNORE any age label that appears elsewhere in the source information (e.g. another seller\'s listing showing "4+", "対象年齢6歳以上", etc.) — such labels MUST NOT be copied into the title; only use the age rules above. Omit age if the product is not a toy or collectible. Example: "Used Gundam RX-78-2 Figure For Ages 15+"',
+    '  "title": customs declaration title in plain English, max 40 chars, no marketing language, no Japanese characters. Format: <Condition> <Brand> <Character/Model> <Item Type> <Age> (the angle brackets are just labels, never print them). <Brand> is optional — include the real brand name when known; when the brand is unknown or the item is unbranded, OMIT that word/segment entirely and do NOT write any placeholder in its place (never write "Unbranded", "No Brand", "Generic", "[Brand]", or empty brackets []). Start the title with the condition word "Used" or "New" as the very first word: use "Used" if the source indicates a secondhand item (中古, used, pre-owned, 目立った傷や汚れなし, etc.); use "New" ONLY if the source clearly states the item is new/unused/unopened (新品, 未使用, 未開封, etc.); if the condition cannot be determined, use "Used" (items handled by this tool come from Japanese secondhand marketplaces). Always include brand name and character or model name when available. Append age requirement at the end when applicable: use "For Ages 15+" for anime/manga figures and collectibles (not toys for actual play), "For Ages 13+" for trading cards and card games, "For Ages X+" for toys with a clear target age. IGNORE any age label that appears elsewhere in the source information (e.g. another seller\'s listing showing "4+", "対象年齢6歳以上", etc.) — such labels MUST NOT be copied into the title; only use the age rules above. Omit age if the product is not a toy or collectible. Example: "Used Gundam RX-78-2 Figure For Ages 15+"',
     '  "country": country of origin — default "Japan" for secondhand Japanese marketplace items unless clearly otherwise',
     '  "reason": one sentence in Japanese explaining why you chose this HTSUS code',
     'Return ONLY the JSON object. No markdown, no explanation outside the JSON.'
@@ -2240,7 +2264,7 @@ function showResultFromAi(aiData) {
   state.condition = /^new\b/i.test(aiData.title || '') ? 'New in Box' : 'Pre-Owned';
 
   showResult();
-  document.getElementById('inputTitle').value = aiData.title || '';
+  document.getElementById('inputTitle').value = sanitizeBrandPlaceholder(aiData.title || '');
 
   // 年齢表記の機械ガード（2026-08-13追加。TSCA機能のtscaFindInvalidAgeLabels()を流用し、
   // TSCA共通基準の判定にする）。この画面は既存仕様どおり「For Ages X+」という任意の
@@ -2303,10 +2327,13 @@ function tscaAiSystemPrompt(sourceLabel) {
     '   - Prioritize fitting over completeness: shorten or omit the brand name if needed.',
     '   - For toys and collectibles (see the age statement rules below), use this exact format',
     '     (no quotes around the product name, no comma before the age statement):',
-    '     <Condition> [<Brand>] <short product name> <item type> For Ages NN+',
+    '     <Condition> <Brand> <short product name> <item type> For Ages NN+',
     '   - For all other products (kitchenware, clothing, electronics, etc.), use this format',
     '     with NO age statement:',
-    '     <Condition> [<Brand>] <short product name> <item type>',
+    '     <Condition> <Brand> <short product name> <item type>',
+    '   - The angle brackets above are placeholder labels only, never print literal brackets. <Brand> is',
+    '     optional: when the brand is unknown or the item is unbranded, OMIT that word entirely — never',
+    '     write "Unbranded", "No Brand", "Generic", or empty brackets [] in its place.',
     '   - Age statement rules (FIXED values, appended at the END of the title):',
     '     * Trading cards and card games: append " For Ages 13+". Always exactly 13+.',
     '     * ALL other toys and collectibles - anime/manga figures, character goods, plush toys,',
@@ -2948,6 +2975,9 @@ function tscaShortenTitlePrompt() {
  *  このコードがタイトルを機械的に切り捨てることはない（黙って切らない原則）。
  *  超過が解消しない場合もタイトルは欄に残し、修正はユーザーが行う。 */
 function tscaFinalizeAiTitle(result, msgEl, done) {
+  // ブランド不明時のプレースホルダー語・空角括弧を機械的に除去（2026-08-14対応）
+  result.title = sanitizeBrandPlaceholder(result.title);
+
   function finish(title, tooWide) {
     var errs = [];
     if (tooWide) errs.push(TSCA_TITLE_WIDTH_ERROR);
@@ -2967,6 +2997,7 @@ function tscaFinalizeAiTitle(result, msgEl, done) {
         finish(result.title, true);
         return;
       }
+      retry.title = sanitizeBrandPlaceholder(retry.title);
       tscaTitleFitsWidth(retry.title, function(fits2) {
         finish(retry.title, !fits2);
       });
@@ -5752,14 +5783,17 @@ function fedexCallAiJson(pageInfo, cb) {
     '      states new/unused/unopened (新品, 未使用, 未開封, etc.); if undetermined, use "Used".',
     '    - For toys and collectibles, use this exact format (no quotes around the product name,',
     '      no comma before the age statement):',
-    '      <Condition> [<Brand>] <short product name> <item type> For Ages NN+',
+    '      <Condition> <Brand> <short product name> <item type> For Ages NN+',
     '      Trading cards and card games always use " For Ages 13+"; ALL other toys and',
     '      collectibles (anime/manga figures, character goods, plush toys, model kits, dolls, and toys',
     '      meant for actual play) always use " For Ages 15+", even if originally marketed',
     '      to young children. IGNORE any age label in the source information (e.g. "4+", "対象年齢6歳以上")',
     '      — never copy it; use ONLY the fixed For Ages 13+ / For Ages 15+ values above.',
     '    - For all other products (not a toy or collectible), use this format with NO age statement:',
-    '      <Condition> [<Brand>] <short product name> <item type>',
+    '      <Condition> <Brand> <short product name> <item type>',
+    '    - The angle brackets above are placeholder labels only, never print literal brackets. <Brand> is',
+    '      optional: when the brand is unknown or the item is unbranded, OMIT that word entirely — never',
+    '      write "Unbranded", "No Brand", "Generic", or empty brackets [] in its place.',
     '    - No marketing language. Keep it a few words beyond the condition/format above.',
     '  "use_en": the product\'s intended use in English, e.g. "for retail sale". For collector items/hobby goods use something like "for collection/display" when that fits the context better than "for retail sale".',
     '  "materials_en": material composition in English.',
@@ -6012,7 +6046,8 @@ function fedexRunAiFromUrl() {
 function fedexFillDraftFromAi(aiData) {
   state.fedex.makerAiSeq++;
   state.fedex.addressAiSeq++;
-  var nameEn = aiData.name_en || '';
+  // ブランド不明時のプレースホルダー語・空角括弧を機械的に除去（2026-08-14対応）
+  var nameEn = sanitizeBrandPlaceholder(aiData.name_en || '');
   document.getElementById('fedexItemName').value = nameEn;
   document.getElementById('fedexItemUse').value = aiData.use_en || '';
   document.getElementById('fedexItemMaterials').value = aiData.materials_en || '';
@@ -7617,10 +7652,13 @@ function gnrAiSystemPrompt() {
     '    secondhand marketplaces).',
     '- For toys and collectibles (see the age statement rules below), use this exact format',
     '  (no quotes around the product name, no comma before the age statement):',
-    '  <Condition> [<Brand>] <short product name> <item type> For Ages NN+',
+    '  <Condition> <Brand> <short product name> <item type> For Ages NN+',
     '- For all other products (kitchenware, clothing, electronics, etc.), use this format with NO',
     '  age statement:',
-    '  <Condition> [<Brand>] <short product name> <item type>',
+    '  <Condition> <Brand> <short product name> <item type>',
+    '- The angle brackets above are placeholder labels only, never print literal brackets. <Brand> is',
+    '  optional: when the brand is unknown or the item is unbranded, OMIT that word entirely — never',
+    '  write "Unbranded", "No Brand", "Generic", or empty brackets [] in its place.',
     '- Age statement rules (FIXED values, appended at the END, only for toys/collectibles):',
     '  * Trading cards and card games: append " For Ages 13+". Always exactly 13+.',
     '  * ALL other toys and collectibles - anime/manga figures, character goods, plush toys, model kits,',
@@ -7753,6 +7791,9 @@ function gnrShortenDescriptionPrompt() {
  *  msgElは短縮リトライ中の進行表示に使う（gnrGenerateDescription/gnrRunAiFromPageFlowの
  *  どちらの呼び出し元でも、その画面で現在表示されているメッセージ要素を渡す）。 */
 function gnrFinalizeAiDescription(description, msgEl, done) {
+  // ブランド不明時のプレースホルダー語・空角括弧を機械的に除去（2026-08-14対応）
+  description = sanitizeBrandPlaceholder(description);
+
   function finish(desc, tooLong) {
     var errs = [];
     if (tooLong) {
@@ -7789,6 +7830,7 @@ function gnrFinalizeAiDescription(description, msgEl, done) {
       finish(description, true);
       return;
     }
+    retry.description = sanitizeBrandPlaceholder(retry.description);
     finish(retry.description, retry.description.length > GNR_DESCRIPTION_STRICT_MAX);
   });
 }
