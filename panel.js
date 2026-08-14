@@ -7840,12 +7840,14 @@ function gnrProceedToConfirm(f) {
 // CPSC書類（GNR）: テキスト欄の実測フィット処理
 // -------------------------------------------------------
 
-/** テキストフィールドの実際の欄サイズ（幅、pt）を取得する。GNR様式は1フィールド=
- *  1ウィジェット前提。取得できない場合はnull。 */
-function gnrGetFieldWidth(field) {
+/** テキストフィールドの実際の欄のRect（x, y, width, height / pt、左下原点）を取得する。
+ *  GNR様式は1フィールド=1ウィジェット前提。取得できない場合はnull。
+ *  2026-08-14: 旧gnrGetFieldWidth()を、値の紙面焼き付け方式への変更に伴い改名・拡張した
+ *  （幅だけでなく描画位置x/yと高さも必要になったため）。呼び出し元・用途は不変。 */
+function gnrGetFieldRect(field) {
   var widgets = field.acroField.getWidgets();
   if (!widgets || !widgets.length) return null;
-  return widgets[0].getRectangle().width;
+  return widgets[0].getRectangle();
 }
 
 /** text が maxWidth に収まる最大フォントサイズ（GNR_FIT_MAX_FONT_SIZE以下・
@@ -7869,90 +7871,100 @@ function gnrEstimateCharsOver(font, text, maxWidth) {
   return Math.max(1, Math.ceil(overWidth / avgCharWidth));
 }
 
-// -------------------------------------------------------
-// CPSC書類（GNR）: 様式PDFの構造上の欠陥への対策
-//
-// 2026-08-13 実機テストで発覚: 同梱の様式PDF（data/cpsc_gnr_template.pdf）は、
-// AcroForm/Fieldsに登録されているフィールドオブジェクトと、ページのAnnotsに実際に
-// 載っている（＝ビューアが描画・値の表示に使う）ウィジェット注釈オブジェクトが、
-// 同じフィールド名を持つ「別オブジェクト」になっている（本来は同一オブジェクトの
-// はずだが、テンプレートの作成過程で複製されたとみられる。pypdfで両オブジェクトの
-// 間接参照番号が異なることを実測確認済み。全フィールドで同様の構造）。
-// pdf-libの高レベルAPI（textField.setText/setFontSize、checkbox.check()、
-// form.updateFieldAppearances()）はいずれも acroField.getWidgets() が返す
-// AcroForm側のオブジェクトにしか /V・/AS・/AP を書き込まないため、ページのAnnotsに
-// 実際に載っている側がその値のまま（テキスト欄は/Vが空、チェックボックスは/ASが/Off）
-// に取り残され、ビューア（特にAnnotsを厳密に辿って描画するpoppler/pdftoppm）で
-// 正しく表示されない（テキストが表示されない・チェックマークが表示されない）。
-// 以下の2関数は、高レベルAPIがAcroForm側に書き込んだ最終結果を、ページのAnnotsに
-// 実際に載っている同名オブジェクトへ低レベルAPIで直接コピーする対策。
-// -------------------------------------------------------
-
-/** チェックボックスの/AS（表示状態）と/Vを、ページのAnnotsに実際に載っている
- *  同名ウィジェット注釈へ直接書き込む。チェックボックスの/AP（On/Offの見た目）は
- *  様式にもともと共有オブジェクトとして焼き込まれており書き換え不要なため触らない。 */
-function gnrForceCheckboxAppearanceState(doc, fieldName, stateValue) {
-  var target = PDFLib.PDFName.of(stateValue);
-  var tKey = PDFLib.PDFName.of('T');
-  var asKey = PDFLib.PDFName.of('AS');
-  var vKey = PDFLib.PDFName.of('V');
-  for (var pi = 0; pi < doc.getPageCount(); pi++) {
-    var page = doc.getPage(pi);
-    var annots = page.node.Annots();
-    if (!annots) continue;
-    for (var i = 0, n = annots.size(); i < n; i++) {
-      var annotDict = doc.context.lookup(annots.get(i));
-      if (!annotDict || typeof annotDict.get !== 'function') continue;
-      var t = annotDict.get(tKey);
-      if (t && typeof t.decodeText === 'function' && t.decodeText() === fieldName) {
-        annotDict.set(asKey, target);
-        annotDict.set(vKey, target);
-      }
-    }
-  }
+/** テキスト欄のRect内で、フォントサイズに応じた描画y座標（ベースライン、pt）を返す
+ *  （2026-08-14追加）。TSCA機能のように様式ごとに手実測した固定座標を持つ代わりに、
+ *  差し替え様式でも欄のRectから機械的に算出できるようにする簡易式: 欄の高さから
+ *  フォントサイズを引いた残りの半分を下端からの余白とし、さらにディセンダ分の目安として
+ *  フォントサイズの15%を足す（Helveticaのディセンダに対する経験的な補正値。実機PNG
+ *  レンダリングで欄からのはみ出し・極端な偏りがないことを目視確認済み）。 */
+function gnrTextBaselineY(rect, fontSize) {
+  return rect.y + Math.max((rect.height - fontSize) / 2, 0) + fontSize * 0.15;
 }
 
-/** テキストフィールドのAcroForm側オブジェクトに書き込まれた/V（入力値）・/AP（生成された
- *  見た目）を、ページのAnnotsに実際に載っている同名オブジェクトへコピーする。 */
-function gnrSyncTextFieldToPageAnnots(doc, field) {
-  var widgets = field.acroField.getWidgets();
-  if (!widgets || !widgets.length) return;
-  var sourceDict = widgets[0].dict;
-  var fieldName = field.getName();
-  var vKey = PDFLib.PDFName.of('V');
-  var apKey = PDFLib.PDFName.of('AP');
-  var tKey = PDFLib.PDFName.of('T');
-
-  var v = sourceDict.get(vKey);
-  var ap = sourceDict.get(apKey);
-
-  for (var pi = 0; pi < doc.getPageCount(); pi++) {
-    var page = doc.getPage(pi);
-    var annots = page.node.Annots();
-    if (!annots) continue;
-    for (var i = 0, n = annots.size(); i < n; i++) {
-      var annotDict = doc.context.lookup(annots.get(i));
-      if (!annotDict || typeof annotDict.get !== 'function') continue;
-      if (annotDict === sourceDict) continue; // 分裂していない（同一オブジェクト）場合は何もしない
-      var t = annotDict.get(tKey);
-      if (t && typeof t.decodeText === 'function' && t.decodeText() === fieldName) {
-        if (v !== undefined) annotDict.set(vKey, v);
-        else annotDict.delete(vKey);
-        if (ap !== undefined) annotDict.set(apKey, ap);
-      }
-    }
-  }
+/** チェックボックスのRect内にチェックマーク（✓）のポリラインを描画する（2026-08-14追加。
+ *  修正2: 従来のテンプレート由来の塗りつぶし表示をやめ、TSCA機能と同じチェックマークの
+ *  見た目に統一）。TSCA機能のTSCA_CHECK_OFFSETS（実際に手描きでチェックされたPDFの
+ *  ベクター線を実測して得た形状）と同じ考え方だが、TSCA_CHECK_OFFSETSは固定18x18ptの
+ *  チェックボックス専用の絶対値（pt）であり、そのままでは差し替え可能なGNR様式の
+ *  チェックボックス（同梱様式では約12.12x10.92pt、TSCAとは寸法が異なる）に流用できない。
+ *  そこでTSCA_CHECK_OFFSETSの各点をボックス幅・高さに対する比率に変換した値
+ *  （GNR_CHECK_OFFSET_RATIOS、TSCA_CHECK_OFFSETSの値÷TSCA実測ボックスサイズ18ptから
+ *  算出）として独立して持ち、実際のRectのwidth/heightにスケールして描画する
+ *  （TSCA機能のコード・定数自体は一切変更しない）。 */
+var GNR_CHECK_OFFSET_RATIOS = [
+  { dx: 0.1973, dy: 0.5541 },
+  { dx: 0.4196, dy: 0.2486 },
+  { dx: 0.8362, dy: 0.8597 }
+];
+var GNR_CHECK_LINE_THICKNESS = 1.2; // pt。GNR様式のチェックボックスは約12x11ptとTSCAの18x18ptより
+                                     // 小さいため、TSCA_CHECK_OFFSETSの線幅1.6ptをボックスサイズ比で
+                                     // 縮小した値（実機PNGレンダリングで視認性を確認済み）。
+function gnrDrawCheckMark(page, rect, color) {
+  var pts = GNR_CHECK_OFFSET_RATIOS.map(function(o) {
+    return { x: rect.x + o.dx * rect.width, y: rect.y + o.dy * rect.height };
+  });
+  page.drawLine({ start: pts[0], end: pts[1], thickness: GNR_CHECK_LINE_THICKNESS, color: color });
+  page.drawLine({ start: pts[1], end: pts[2], thickness: GNR_CHECK_LINE_THICKNESS, color: color });
 }
 
-/** PDF生成本体。AcroFormを持つ記入可能PDF（gnrGetTemplateBytesで取得した様式）に
- *  pdf-libのフォームAPIで値を書き込む。TSCA機能とは異なりflattenはしない
- *  （受け取り側で編集可能なまま残す）。Option Aチェックボックスのみチェックし、
- *  Option B・undefined（Noncommercial）・Part II〜IV・署名欄（Text1）は一切触らない。 */
+/** ページのAnnotsから、Subtype=WidgetのアノテーションをすべてOn/Off問わず除去する
+ *  （2026-08-14追加）。TSCA機能のtscaGeneratePdf()内の同等処理（インラインIIFE）と
+ *  同じロジックをGNR用に独立して持つ（TSCA機能のコード自体は変更しない）。GNR様式は
+ *  AcroForm/Fields側とページのAnnots側でフィールドオブジェクトが分裂した欠陥構造
+ *  （既知、下記gnrGeneratePdf()コメント参照）を持つが、この処理はページのAnnotsだけを
+ *  見て一律にWidgetを除去するため、分裂の有無に関わらずページ側に実際に載っている
+ *  ウィジェット注釈は確実に除去される。 */
+function gnrRemoveWidgetAnnots(pageNode, context) {
+  var annotsName = PDFLib.PDFName.of('Annots');
+  var annots = pageNode.lookup(annotsName);
+  if (!annots || typeof annots.size !== 'function') return;
+  var kept = context.obj([]);
+  for (var ai = 0; ai < annots.size(); ai++) {
+    var annotDict = annots.lookup(ai);
+    var subtype = annotDict && annotDict.get ? annotDict.get(PDFLib.PDFName.of('Subtype')) : null;
+    if (subtype === PDFLib.PDFName.of('Widget')) continue;
+    kept.push(annots.get(ai));
+  }
+  pageNode.set(annotsName, kept);
+}
+
+/** PDF生成本体（2026-08-14: 値を紙面へ直接焼き付ける方式に変更。修正1）。
+ *
+ *  背景（配布先ユーザーからの不具合報告）: 従来はAcroFormのテキストフィールド／
+ *  チェックボックスに値を書き込む方式（pdf-libのフォームAPI）だった。この方式は、
+ *  ウィジェット注釈を描画しない閲覧環境（一部スマホビューア・メール添付プレビュー等）
+ *  では記入した値が一切見えず白紙のPDFに見えてしまう。さらに同梱の様式PDF
+ *  （data/cpsc_gnr_template.pdf）はAcroForm/Fields側とページのAnnots側でフィールド
+ *  オブジェクトが分裂した欠陥構造を持つ（2026-08-13実機テストで発覚。pypdfで両
+ *  オブジェクトの間接参照番号が異なることを実測確認済み）ため、高レベルAPIで
+ *  書き込んだ値がページのAnnots側（一部ビューアが実際の描画に使う側）に反映されず、
+ *  不具合の一因にもなっていた（旧gnrForceCheckboxAppearanceState/
+ *  gnrSyncTextFieldToPageAnnotsはこの分裂への対策として2026-08-13に追加したが対症療法
+ *  であり、フィールド注釈の描画に依存する方式である限り環境非依存にはならないため、
+ *  2026-08-14に方式そのものを変更し、この2関数は不要になったため削除した）。
+ *
+ *  対策方針（TSCA機能のtscaGeneratePdf()と同じ実績パターンをそのまま踏襲）:
+ *  AcroFormのフォームAPIは一切使わず、新規PDFドキュメントへ様式ページだけをコピーし、
+ *  各欄のRect座標（テンプレートのAcroFormから読み取った値）へpage.drawTextで値を
+ *  直接ページ内容として焼き付け、Option Aチェックボックスはチェックマークの
+ *  ポリラインを直接描画したうえで、ページのAnnotsからWidget注釈をすべて除去する。
+ *  出力に元のroot /AcroFormは一切含まれないため、インタラクティブなフォーム
+ *  フィールドが構造的に残らない。
+ *  案A（form.flatten()）は、上記の分裂構造によりflatten後もページ側の孤児Widget
+ *  注釈が残って焼き付け内容を白背景で覆う恐れがある（TSCA機能で実際に踏んだ罠と
+ *  同じ構造）ため採用しない。
+ *
+ *  記入するのはOption A運用に必要な項目のみ（Tracking number / date / Option A
+ *  チェック / Intended use code / Description / Part V Submitter情報）という
+ *  従来からの記入範囲は不変。Part II〜IVおよび署名欄（Text1）、Option B、
+ *  'undefined'（Noncommercial）は一切触らない（そもそも値を持たないため描画されない・
+ *  元のウィジェット注釈も上記の一律除去で消えるため、未記入欄の見た目は様式印字の
+ *  枠線・チェックボックス枠のみが残る）。 */
 function gnrGeneratePdf() {
-  // 子ども向け安全ゲートの再検証（独立レビュー指摘への対応）。
+  // 子ども向け安全ゲートの再検証（独立レビュー指摘への対応。無変更）。
   // gnrChildCheckのdisabled制御（change時にgnrGenerateBtnのdisabledを切り替える処理）は
   // UI操作を通じてのみ働くため、DevToolsでdisabled属性を外す・この関数を直接呼び出す等で
-  // バイパスされうる。PDF生成処理（テンプレート読み込み・フォーム書き込み）に入る前に
+  // バイパスされうる。PDF生成処理（テンプレート読み込み・描画）に入る前に
   // 必ずチェック状態を再検証し、未チェック・要素が取得できない場合のいずれも
   // 安全側（生成を中断）に倒す。既存のGNR機能内のブロッキングエラー表示（alert）と
   // 同じ方式で知らせる。
@@ -7981,9 +7993,12 @@ function gnrGeneratePdf() {
       return;
     }
 
-    PDFLib.PDFDocument.load(templateBytes).then(function(doc) {
-      return doc.embedFont(PDFLib.StandardFonts.Helvetica).then(function(helv) {
-        var form = doc.getForm();
+    PDFLib.PDFDocument.load(templateBytes).then(function(templateDoc) {
+      // 欄のフィット判定用フォント。テンプレート（差し替え可）の実測に使うだけで、
+      // 実際の描画は後段でoutDocに埋め込んだ別インスタンスを使う（標準フォントの
+      // メトリクスはどちらのドキュメントに埋め込んでも同じ値になる）。
+      return templateDoc.embedFont(PDFLib.StandardFonts.Helvetica).then(function(measureFont) {
+        var form = templateDoc.getForm();
 
         var fieldPlan = [
           { name: GNR_FIELD.tracking,    value: f.tracking,        label: 'Tracking number' },
@@ -7998,69 +8013,69 @@ function gnrGeneratePdf() {
           { name: GNR_FIELD.date40,      value: f.submitterDate,   label: '40 Date' }
         ];
 
-        // 1) 各欄が実際に収まるフォントサイズを実測で求める（2026-08-13 実機テストで
-        //    発覚した「文字の見切れ」への対応）。欄の実寸はテンプレート（同梱or差し替え）
-        //    から実際に読み取るため、差し替え様式で欄の幅が違っても正しく判定される。
-        //    GNR_FIT_MIN_FONT_SIZEでも収まらない場合は黙って切り捨てず、
+        // 1) 各欄が実際に収まるフォントサイズを実測で求める（フィット判定のロジック
+        //    自体はgnrFitFontSize/gnrEstimateCharsOverとも無変更）。欄の実寸はテンプレート
+        //    （同梱or差し替え）から実際に読み取るため、差し替え様式で欄の幅が違っても
+        //    正しく判定される。GNR_FIT_MIN_FONT_SIZEでも収まらない場合は黙って切り捨てず、
         //    エラーメッセージ（あと何文字削る必要があるかの目安つき）でPDF生成を止める。
+        //    2026-08-14: 焼き付け方式への変更に伴い、幅だけでなく描画位置（x, y, height）も
+        //    必要なため、rect全体（gnrGetFieldRect）を保持するよう変更した。
         var errors = [];
         var plan = [];
         fieldPlan.forEach(function(item) {
           if (!item.value) return;
           var field = form.getTextField(item.name);
-          var fieldWidth = gnrGetFieldWidth(field);
-          var maxWidth = fieldWidth != null ? Math.max(fieldWidth - GNR_FIT_PADDING_X, 1) : null;
-          var size = maxWidth != null ? gnrFitFontSize(helv, item.value, maxWidth) : GNR_FIT_MAX_FONT_SIZE;
+          var rect = gnrGetFieldRect(field);
+          var maxWidth = rect != null ? Math.max(rect.width - GNR_FIT_PADDING_X, 1) : null;
+          var size = maxWidth != null ? gnrFitFontSize(measureFont, item.value, maxWidth) : GNR_FIT_MAX_FONT_SIZE;
           if (size == null) {
-            var charsOver = gnrEstimateCharsOver(helv, item.value, maxWidth);
+            var charsOver = gnrEstimateCharsOver(measureFont, item.value, maxWidth);
             errors.push(item.label + ' が長すぎて欄に収まりません（' + GNR_FIT_MIN_FONT_SIZE +
               'ptまで縮小しても収まりません。目安として約' + charsOver + '文字短くしてください）。');
             return;
           }
-          plan.push({ field: field, value: item.value, size: size });
+          plan.push({ rect: rect, value: item.value, size: size });
         });
         if (errors.length) {
           throw new Error(errors.join('\n'));
         }
 
-        // 2) フィット判定を通過した欄のみ書き込む。setFontSize()は/DAのフォントサイズを
-        //    書き換えるだけで見た目はまだ再生成されない（setText()も同様、値の代入のみ）。
-        //    実際の見た目（グリフの描画）は後段のform.updateFieldAppearances()で
-        //    まとめて生成されるため、この順序（先にsetFontSize、次にsetText）で問題ない。
-        plan.forEach(function(item) {
-          item.field.setFontSize(item.size);
-          item.field.setText(item.value);
+        // Option AチェックボックスのRectも読んでおく（差し替え様式に存在しなければ
+        // form.getCheckBox()がここでthrowし、以降の描画処理には進まない）。
+        var optionARect = gnrGetFieldRect(form.getCheckBox(GNR_FIELD.optionA));
+
+        // 2) 焼き付け先の新規PDFを作る。TSCA機能のtscaGeneratePdf()と同じ「新規PDFへ
+        //    様式ページだけコピーし、Widget注釈を除去してから直接描画」パターン
+        //    （このgnrGeneratePdf()コメント冒頭・gnrRemoveWidgetAnnots()参照）。
+        return PDFLib.PDFDocument.create().then(function(outDoc) {
+          return outDoc.copyPages(templateDoc, [0]).then(function(copiedPages) {
+            outDoc.addPage(copiedPages[0]);
+            gnrRemoveWidgetAnnots(copiedPages[0].node, outDoc.context);
+
+            return outDoc.embedFont(PDFLib.StandardFonts.Helvetica).then(function(drawFont) {
+              var page = outDoc.getPage(0);
+              var black = PDFLib.rgb(0, 0, 0);
+
+              // 3) フィット判定を通過した欄をすべて紙面へ直接焼き付ける。
+              plan.forEach(function(item) {
+                page.drawText(item.value, {
+                  x: item.rect.x + GNR_FIT_PADDING_X / 2,
+                  y: gnrTextBaselineY(item.rect, item.size),
+                  size: item.size,
+                  font: drawFont,
+                  color: black
+                });
+              });
+
+              // Option A（免責）のみチェックマークを描画する。Option B・undefined
+              // （Noncommercial）は触らない（何も描画しない＝様式印字のチェックボックス枠
+              // だけが残る、未記入の見た目のまま）。
+              gnrDrawCheckMark(page, optionARect, black);
+
+              return outDoc.save();
+            });
+          });
         });
-
-        // Option A（免責）のみチェックする。Option B・undefined（Noncommercial）は
-        // 触らない（デフォルトのOffのまま）。
-        form.getCheckBox(GNR_FIELD.optionA).check();
-
-        // flattenはしない。updateFieldAppearances()でテキスト欄の見た目
-        // （フォントサイズ変更後の再描画）を確定させる。
-        form.updateFieldAppearances();
-
-        // 3) 様式PDFの構造上の欠陥への対策（2026-08-13 実機テストで発見。詳細は
-        //    gnrForceCheckboxAppearanceState/gnrSyncTextFieldToPageAnnotsの
-        //    コメント参照）。ここまでの高レベルAPIでの書き込みはAcroForm/Fields側の
-        //    オブジェクトにしか反映されないため、ページのAnnotsに実際に載っている
-        //    （＝ビューアが描画に使う）同名オブジェクトへ低レベルAPIで直接コピーする。
-        plan.forEach(function(item) {
-          gnrSyncTextFieldToPageAnnots(doc, item.field);
-        });
-        gnrForceCheckboxAppearanceState(doc, GNR_FIELD.optionA, 'On');
-
-        // 4) NeedAppearances=trueが様式PDF自体に含まれている（pdf-lib由来ではなく、
-        //    テンプレート作成元のツールが埋め込んだもの。data/cpsc_gnr_template.pdfの
-        //    生データをpypdfで実測し、pdf-libのバンドル内にNeedAppearancesを扱う
-        //    コードが一切無いことも確認済み）。これが残っていると、ビューアによっては
-        //    自前で外観を再生成しようとして、このツールが書き込んだ正しい外観
-        //    （調整済みフォントサイズ・チェックマーク）を無視してしまう場合がある。
-        //    正しい外観を生成した後は常にfalseへ戻し、全ビューアでこのツールが
-        //    生成した外観がそのまま使われるようにする。
-        form.acroForm.dict.set(PDFLib.PDFName.of('NeedAppearances'), PDFLib.PDFBool.False);
-
-        return doc.save();
       });
     }).then(function(bytes) {
       var blob = new Blob([bytes], { type: 'application/pdf' });
