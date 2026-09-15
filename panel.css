@@ -929,17 +929,12 @@ select:focus {
   border-top: 1px solid #bbdefb;
   padding-top: 4px;
 }
-@media (prefers-color-scheme: dark) {
-  .ai-badge {
-    background: #1a2a3a;
-    border-color: #4a90d9;
-    color: #90caf9;
-  }
-  .ai-reason {
-    color: #64b5f6;
-    border-top-color: #2a4a6a;
-  }
-}
+/* 2026-09-15: パネル本体は常にライトカラー固定（FedEx機能と同じ方針）。
+   ダークモード配色にすると、この中の .search-result-item（常に濃色文字）が
+   読めなくなる実機報告があったため、.ai-badge / .ai-reason /
+   .ai-unverified-candidates のダークモード分岐は廃止し、常時ライト配色にする。
+   #watch_aiResultBadge / #tscaAiResultBadge / #gnrAiResultBadge も .ai-badge を
+   使うため同様に常時ライトになる（意図どおり）。 */
 
 /* AIコード未検証（公式HTSデータに存在しない）時の警告＋候補リスト。
    #aiResultBadge の中に追加される。候補行は既存の .search-result-item を流用。 */
@@ -955,12 +950,6 @@ select:focus {
   max-height: 240px;
   overflow-y: auto;
   margin-top: 6px;
-}
-@media (prefers-color-scheme: dark) {
-  .ai-unverified-candidates {
-    background: #1e1e1e;
-    border-color: #444;
-  }
 }
 
 /* ===========================================

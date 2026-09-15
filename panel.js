@@ -2139,13 +2139,16 @@ function startAiFlow() {
       return;
     }
     callOpenAI(pageInfo, function(err, aiData) {
-      btn.disabled = false;
       if (err || !aiData) {
+        btn.disabled = false;
         showMessage(msg, 'error', 'AI呼び出しに失敗しました: ' + (err ? err.message : '不明なエラー'));
         return;
       }
       msg.style.display = 'none';
-      showResultFromAi(aiData);
+      // ボタンはここでは有効化しない。showResultFromAi() は、コードが公式データに
+      // 無かった場合に公式候補からの再選定（2回目のAI呼び出し）を行うことがあり、
+      // その一連の処理が終わるまで（内部の finishAiFlow()）無効のままにする。
+      showResultFromAi(aiData, pageInfo);
     });
   });
 }
@@ -2261,7 +2264,9 @@ function getPageInfo(cb) {
   });
 }
 
-function callOpenAI(pageInfo, cb) {
+/** callOpenAI() と callOpenAIReselect() の両方で使う、商品情報の行リストを組み立てる
+ *  共通処理（AI差し戻し再選定でも「同じ商品情報」を渡す必要があるため）。 */
+function buildAiProductLines(pageInfo) {
   var lines = [
     'Product URL: ' + pageInfo.url,
     'Product name: ' + (pageInfo.productName || ''),
@@ -2270,8 +2275,11 @@ function callOpenAI(pageInfo, cb) {
   if (pageInfo.condition)   lines.push('Condition: ' + pageInfo.condition);
   if (pageInfo.category)    lines.push('Category on site: ' + pageInfo.category);
   if (pageInfo.description) lines.push('Description: ' + pageInfo.description);
+  return lines;
+}
 
-  var userContent = lines.join('\n');
+function callOpenAI(pageInfo, cb) {
+  var userContent = buildAiProductLines(pageInfo).join('\n');
 
   var systemPrompt = [
     'You are a US customs (HTSUS) classification expert for Japanese secondhand goods exported to the US.',
@@ -2327,84 +2335,279 @@ function callOpenAI(pageInfo, cb) {
   });
 }
 
-function showResultFromAi(aiData) {
+/** callOpenAI() が返したHTSUSコードが公式HTSデータ（state.searchMap）に存在しない
+ *  場合の「差し戻し／再選定」呼び出し。最初のAI応答（aiClean）が誤りだったことを
+ *  伝えた上で、実在が確認済みの候補コード一覧（collectHtsCandidates()の結果、最大60件）
+ *  の中から必ず1つだけ選ばせる。呼び出し元（showResultFromAi）が、返ってきたコードを
+ *  candidates に厳密照合して初めて確定する（ここでは選ばせるだけで検証はしない）。
+ *  エンドポイント・モデル・ヘッダー・JSON抽出方法は callOpenAI() と同じパターン。 */
+function callOpenAIReselect(pageInfo, aiClean, candidates, cb) {
+  var lines = buildAiProductLines(pageInfo);
+  lines.push('');
+  lines.push('Your previously proposed HTSUS code ' + stripDots(aiClean) + ' does not exist in the official 2026 HTSUS.');
+  lines.push('Here is a list of official candidate HTSUS codes near your original guess (one per line, format: code — official description — duty):');
+  candidates.forEach(function(c) {
+    lines.push(stripDots(c.code) + ' — ' + (c.desc || '(no description)') + ' — ' + (c.duty || '(no duty listed)'));
+  });
+
+  var userContent = lines.join('\n');
+
+  var systemPrompt = [
+    'You are a US customs (HTSUS) classification expert for Japanese secondhand goods exported to the US.',
+    'You previously proposed HTSUS ' + stripDots(aiClean) + ' for this product, but that number does not exist in the official 2026 HTSUS.',
+    'You are given a list of official candidate HTSUS codes (each line: code — official description — duty) that are close to your original guess.',
+    'Choose EXACTLY ONE code from this list that best matches the product. Do not invent a new code and do not modify any digit of a listed code.',
+    'Return ONLY a JSON object with exactly these fields:',
+    '  "htsus": digits only, no dots — MUST be copied exactly from one of the candidate codes listed above',
+    '  "reason": one sentence in Japanese explaining why you chose this code',
+    'If none of the listed candidates fit the product at all, return {"htsus": "", "reason": "<one sentence in Japanese explaining why none fit>"} instead.',
+    'Return ONLY the JSON object. No markdown, no explanation outside the JSON.'
+  ].join('\n');
+
+  fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + state.openaiKey
+    },
+    body: JSON.stringify({
+      model: 'gpt-5.4',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent }
+      ],
+      max_completion_tokens: 300
+    })
+  })
+  .then(function(r) {
+    if (!r.ok) {
+      return r.json().then(function(errBody) {
+        throw new Error((errBody.error && errBody.error.message) || ('HTTP ' + r.status));
+      });
+    }
+    return r.json();
+  })
+  .then(function(data) {
+    var content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!content) throw new Error('AIからの応答が空でした');
+    // JSON部分だけ抽出（余計なテキストを除去）
+    var match = content.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('AIの応答にJSONが含まれていませんでした');
+    var parsed;
+    try {
+      parsed = JSON.parse(match[0]);
+    } catch(e) {
+      throw new Error('JSONの解析に失敗しました: ' + e.message);
+    }
+    return parsed;
+  })
+  .then(function(parsed) {
+    // cb は try の外で1回だけ呼ぶ（cb内部の例外を .catch が拾って cb を二重に呼ばないようにする）
+    cb(null, parsed);
+  }, function(e) {
+    cb(e, null);
+  });
+}
+
+function showResultFromAi(aiData, pageInfo) {
   // 実例バグ: AIが返した「4202.32.9550」は実在しないコード（正しい葉は
   // 4202.32.20.00）だったが、公式HTSデータ（search_index.json）と突き合わせず
   // そのまま表示していた。ここで normalizeHtsno() → ensureSearchIndex() →
   // state.searchMap で必ず検証する。手動入力の applyManualCode() と同じ検証。
   var clean = normalizeHtsno(aiData.htsus || '');
 
+  var aiBtn = document.getElementById('aiAnalyzeBtn');
+  var aiMsg = document.getElementById('aiAnalyzeMsg');
+  // 「次へ」ボタンを無効化したまま次に進む一連の処理（見つかった場合はすぐ、
+  // 見つからない場合は差し戻し再選定のAI呼び出しを挟んで）が終わるたびに必ず呼ぶ。
+  function finishAiFlow() {
+    if (aiMsg) aiMsg.style.display = 'none';
+    if (aiBtn) aiBtn.disabled = false;
+  }
+
   ensureSearchIndex(function() {
     var found = state.searchMap ? state.searchMap.get(clean) : null;
 
-    state.leafData = {
-      htsus: clean,
-      hs6:   normalizeHtsno(aiData.hs6 || '') || clean.substring(0, 6),
-      desc:  aiData.description || '',
-      duty:  ''
-    };
-
     if (found) {
-      // 公式データで見つかった場合は、公式の説明文・税率で上書きする
+      // 公式データで見つかった場合は、公式の説明文・税率をそのまま採用する
       // （AIの説明文より優先。税率はAI応答に元々含まれておらず常に空だったため
       // 「税率（参考）」が常に「(情報なし)」になっていた不具合もここで解消する）。
-      state.leafData.desc = found.d || state.leafData.desc;
-      state.leafData.duty = found.g || '(情報なし)';
-      state.aiCodeUnverified = false;
-    } else {
-      state.aiCodeUnverified = true;
+      applyVerifiedAiResult(aiData, clean, found.d, found.g, null);
+      finishAiFlow();
+      return;
     }
 
-    state.leafKey        = state.leafData.htsus;
-    state.currentCategory = null;
-    state.browseChapter   = null;
-    state.brand     = aiData.brand   || '';
-    state.model     = aiData.model   || '';
-    state.country   = aiData.country || 'Japan';
-    // 2026-08-13対応: titleの先頭に付くようになった状態表記(Used/New)とConditionの
-    // ドロップダウン（inputCondition、選択肢は 'Pre-Owned' / 'New in Box'）が二重表記
-    // （例: タイトルは"New ..."なのにConditionは中古のまま）にならないよう、
-    // AIが判定したtitleの先頭語からConditionの初期値を同期する。titleが"New"で
-    // 始まる場合のみ'New in Box'、それ以外（"Used"または判定不能）は現状どおり
-    // 'Pre-Owned'を既定にする（TSCAの「不明ならUsed」判定基準と揃える）。
-    state.condition = /^new\b/i.test(aiData.title || '') ? 'New in Box' : 'Pre-Owned';
+    // 公式データに見つからない場合、まず公式候補（collectHtsCandidates()）の中から
+    // AIに選び直させる（差し戻し／再選定）。候補が無い、またはAPIキー未設定なら
+    // 再選定を試みず、従来どおり即座に「未検証」表示にフォールバックする。
+    var candidates = collectHtsCandidates(clean);
+    var offered = candidates.slice(0, 60); // AIに渡す候補は最大60件（表示は別途25件に絞る）
 
-    showResult();
-    document.getElementById('inputTitle').value = sanitizeBrandPlaceholder(aiData.title || '');
+    if (offered.length > 0 && state.openaiKey) {
+      if (aiMsg) showMessage(aiMsg, 'info', 'AIが提示したコードは公式データに無いため、公式候補から再選定中…');
+      callOpenAIReselect(pageInfo, clean, offered, function(err, reselectData) {
+        var reselectedClean = (!err && reselectData && reselectData.htsus)
+          ? normalizeHtsno(reselectData.htsus) : '';
+        // 厳密検証: state.searchMapに存在するだけでは不十分で、実際にAIへ提示した
+        // candidates（offered）の中の1件と完全一致することを要求する。
+        var matched = null;
+        if (reselectedClean) {
+          for (var i = 0; i < offered.length; i++) {
+            if (offered[i].code === reselectedClean) { matched = offered[i]; break; }
+          }
+        }
 
-    // 年齢表記の機械ガード（2026-08-13追加。TSCA機能のtscaFindInvalidAgeLabels()を流用し、
-    // TSCA共通基準の判定にする）。この画面は既存仕様どおり「For Ages X+」という任意の
-    // 年齢も許容しており、人が確認・修正してから次へ進む前提のため、TSCA/GNR/FedExのような
-    // 生成ブロックはせず、タイトルはそのまま欄に入れた上で警告メッセージを表示するのみとする。
-    var ageWarning = tscaFindInvalidAgeLabels(aiData.title || '');
-
-    // AI判定理由を表示
-    var badge = document.getElementById('aiResultBadge');
-    if (badge) {
-      var reasonText = aiData.reason ? '💡 ' + aiData.reason : '';
-      var ageWarningHtml = ageWarning.length
-        ? '<div class="ai-reason" style="color:#b3261e;">⚠ ' +
-          escapeHtml('年齢表記「' + ageWarning.join('」「') + '」を確認してください。他セラーの表記をそのままコピーしていないか、Age 13+/15+の固定値が適切か見直してください。') +
-          '</div>'
-        : '';
-      badge.innerHTML = '✨ <strong>AI入力補助</strong> — 内容を確認・修正してから次へ進んでください' +
-        (reasonText ? '<div class="ai-reason">' + escapeHtml(reasonText) + '</div>' : '') +
-        ageWarningHtml;
-      badge.style.display = '';
-
-      if (!found) {
-        renderAiUnverifiedWarning(badge, clean);
-      }
+        if (matched) {
+          var reselectReason = '🔁 最初に提示された ' + stripDots(clean) +
+            ' は公式HTSデータに存在しなかったため、公式候補の中からAIが再選定しました: ' +
+            (reselectData.reason || '');
+          applyVerifiedAiResult(aiData, matched.code, matched.desc, matched.duty, reselectReason);
+        } else {
+          // 再選定に失敗／応答なし／候補外のコードが返った場合は、従来どおり
+          // 未検証扱い（赤い警告＋クリック可能な候補一覧）にフォールバックする。
+          applyUnverifiedAiResult(aiData, clean);
+        }
+        finishAiFlow();
+      });
+      return;
     }
+
+    applyUnverifiedAiResult(aiData, clean);
+    finishAiFlow();
   });
+}
+
+/** showResultFromAi() の共通フィールド設定（leafKey/カテゴリ/ブランド/型番/国/
+ *  Condition同期）。leafData は呼び出し側が先に確定させておくこと。 */
+function applyAiCommonFields(aiData) {
+  state.leafKey        = state.leafData.htsus;
+  state.currentCategory = null;
+  state.browseChapter   = null;
+  state.brand     = aiData.brand   || '';
+  state.model     = aiData.model   || '';
+  state.country   = aiData.country || 'Japan';
+  // 2026-08-13対応: titleの先頭に付くようになった状態表記(Used/New)とConditionの
+  // ドロップダウン（inputCondition、選択肢は 'Pre-Owned' / 'New in Box'）が二重表記
+  // （例: タイトルは"New ..."なのにConditionは中古のまま）にならないよう、
+  // AIが判定したtitleの先頭語からConditionの初期値を同期する。titleが"New"で
+  // 始まる場合のみ'New in Box'、それ以外（"Used"または判定不能）は現状どおり
+  // 'Pre-Owned'を既定にする（TSCAの「不明ならUsed」判定基準と揃える）。
+  state.condition = /^new\b/i.test(aiData.title || '') ? 'New in Box' : 'Pre-Owned';
+}
+
+/** コードが公式データで確定した場合（最初のAI応答がそのまま見つかった場合、または
+ *  差し戻し再選定でAIが候補から選び直した場合）の共通処理。extraReasonLine が
+ *  あれば、AI判定理由の下にもう1行 .ai-reason として追加表示する（再選定の説明）。 */
+function applyVerifiedAiResult(aiData, code, desc, duty, extraReasonLine) {
+  state.leafData = {
+    htsus: code,
+    hs6:   code.substring(0, 6),
+    desc:  desc || aiData.description || '',
+    duty:  duty || '(情報なし)'
+  };
+  state.aiCodeUnverified = false;
+  applyAiCommonFields(aiData);
+
+  showResult();
+  document.getElementById('inputTitle').value = sanitizeBrandPlaceholder(aiData.title || '');
+  renderAiResultBadge(aiData, extraReasonLine, null);
+}
+
+/** コードが公式データで確定できなかった場合（差し戻し再選定も失敗、または
+ *  再選定自体を行わなかった場合）の共通処理。従来の「未検証」表示をそのまま行う。 */
+function applyUnverifiedAiResult(aiData, clean) {
+  state.leafData = {
+    htsus: clean,
+    hs6:   normalizeHtsno(aiData.hs6 || '') || clean.substring(0, 6),
+    desc:  aiData.description || '',
+    duty:  ''
+  };
+  state.aiCodeUnverified = true;
+  applyAiCommonFields(aiData);
+
+  showResult();
+  document.getElementById('inputTitle').value = sanitizeBrandPlaceholder(aiData.title || '');
+  renderAiResultBadge(aiData, null, clean);
+}
+
+/** #aiResultBadge の中身（AI判定理由・年齢表記警告・任意の追加行）を描画する。
+ *  unverifiedClean が渡された場合は、さらに renderAiUnverifiedWarning() で
+ *  赤い警告と候補一覧を追加する（コードが確定できなかった場合のみ）。 */
+function renderAiResultBadge(aiData, extraReasonLine, unverifiedClean) {
+  var badge = document.getElementById('aiResultBadge');
+  if (!badge) return;
+
+  // 年齢表記の機械ガード（2026-08-13追加。TSCA機能のtscaFindInvalidAgeLabels()を流用し、
+  // TSCA共通基準の判定にする）。この画面は既存仕様どおり「For Ages X+」という任意の
+  // 年齢も許容しており、人が確認・修正してから次へ進む前提のため、TSCA/GNR/FedExのような
+  // 生成ブロックはせず、タイトルはそのまま欄に入れた上で警告メッセージを表示するのみとする。
+  var ageWarning = tscaFindInvalidAgeLabels(aiData.title || '');
+
+  var reasonText = aiData.reason ? '💡 ' + aiData.reason : '';
+  var extraHtml = extraReasonLine ? '<div class="ai-reason">' + escapeHtml(extraReasonLine) + '</div>' : '';
+  var ageWarningHtml = ageWarning.length
+    ? '<div class="ai-reason" style="color:#b3261e;">⚠ ' +
+      escapeHtml('年齢表記「' + ageWarning.join('」「') + '」を確認してください。他セラーの表記をそのままコピーしていないか、Age 13+/15+の固定値が適切か見直してください。') +
+      '</div>'
+    : '';
+  badge.innerHTML = '✨ <strong>AI入力補助</strong> — 内容を確認・修正してから次へ進んでください' +
+    (reasonText ? '<div class="ai-reason">' + escapeHtml(reasonText) + '</div>' : '') +
+    extraHtml +
+    ageWarningHtml;
+  badge.style.display = '';
+
+  if (unverifiedClean) {
+    renderAiUnverifiedWarning(badge, unverifiedClean);
+  }
+}
+
+/** AIコードが公式データに見つからなかった時に使う、近い公式コードの候補一覧を集める。
+ *  showResultFromAi()（差し戻し再選定のAI呼び出しに渡す。最大60件に絞るのは呼び出し側）
+ *  と renderAiUnverifiedWarning()（人間向け表示。最大25件に絞るのは呼び出し側）の
+ *  両方から呼ぶ共通実装。ここでは件数を絞らず、見つかった葉ノードを全て返す。
+ *  葉ノードは「10桁コード」とは限らない。search_index.json には、10桁の統計品目番号に
+ *  枝分かれしない8桁コードがそのまま葉になっている項目が多数ある（例: 9103.10.20 / .40 /
+ *  .80 は8桁のまま葉で、10桁の子は無い）。そのため「8桁 or 10桁のコードを集め、その中で
+ *  他の収集済みコードの厳密な接頭辞になっているもの（＝下に枝があるので葉ではない
+ *  中間ノード）を除外する」方式で葉ノードを判定する。前6桁が一致する候補が無ければ
+ *  前4桁にフォールバックする。 */
+function collectHtsCandidates(aiClean) {
+  var clean = aiClean || '';
+  var prefix6 = clean.substring(0, 6);
+  var prefix4 = clean.substring(0, 4);
+
+  function collect(prefix) {
+    if (!prefix || !state.searchIndex) return [];
+    var matched = [];
+    state.searchIndex.forEach(function(item) {
+      if (!item.h) return;
+      var nc = normalizeHtsno(item.h);
+      if (nc.length !== 8 && nc.length !== 10) return; // 葉候補（8桁 or 10桁）のみ
+      if (nc.indexOf(prefix) === 0) matched.push({ code: nc, desc: item.d || '', duty: item.g || '' });
+    });
+    var codes = matched.map(function(m) { return m.code; });
+    return matched.filter(function(m) {
+      // 自分より長い別コードが、自分を厳密な接頭辞として持つなら、自分は
+      // 葉ではない中間ノード（下に枝がある）なので除外する。
+      return !codes.some(function(other) {
+        return other !== m.code && other.length > m.code.length && other.indexOf(m.code) === 0;
+      });
+    });
+  }
+
+  var candidates = collect(prefix6);
+  if (candidates.length === 0) candidates = collect(prefix4);
+  return candidates;
 }
 
 /** showResultFromAi()、および復元時の再検証（restoreProgress）が、コードが
  *  公式HTSデータに見つからなかった時に呼ぶ。showResultFromAi専用の値には依存しない
- *  （badge と aiClean だけを見る）。
+ *  （badge と aiClean だけを見る。AI呼び出しは一切行わない — restoreProgress からも
+ *  安全に直接呼べる）。
  *  #aiResultBadge の中に赤い警告文と、コード前6桁（ヒットなしなら前4桁）が一致する
- *  公式の葉ノード（8桁 or 10桁コード。下に枝がないもの）候補一覧をクリック可能な
- *  行として追加する。行クリックで selectAiCandidateCode() を呼び、そのコードを確定させる。 */
+ *  公式の葉ノード（collectHtsCandidates() が返す8桁 or 10桁コード）候補一覧を
+ *  クリック可能な行として追加する（表示は最大25件）。行クリックで
+ *  selectAiCandidateCode() を呼び、そのコードを確定させる。 */
 function renderAiUnverifiedWarning(badge, aiClean) {
   var box = document.createElement('div');
   box.id = 'aiUnverifiedBox';
@@ -2418,37 +2621,7 @@ function renderAiUnverifiedWarning(badge, aiClean) {
     ' は公式HTSデータに存在しません。下の候補から実在するコードを選ぶか、手入力・検索で確定してください。';
   box.appendChild(warn);
 
-  var prefix6 = aiClean.substring(0, 6);
-  var prefix4 = aiClean.substring(0, 4);
-  var candidates = [];
-
-  // 葉ノードは「10桁コード」とは限らない。search_index.json には、10桁の
-  // 統計品目番号に枝分かれしない8桁コードがそのまま葉になっている項目が
-  // 多数ある（例: 9103.10.20 / .40 / .80 は8桁のまま葉で、10桁の子は無い）。
-  // そのため「8桁 or 10桁のコードを集め、その中で他の収集済みコードの
-  // 厳密な接頭辞になっているもの（＝下に枝があるので葉ではない中間ノード）を
-  // 除外する」方式で葉ノードを判定する。
-  function collect(prefix) {
-    if (!prefix || !state.searchIndex) return [];
-    var matched = [];
-    state.searchIndex.forEach(function(item) {
-      if (!item.h) return;
-      var nc = normalizeHtsno(item.h);
-      if (nc.length !== 8 && nc.length !== 10) return; // 葉候補（8桁 or 10桁）のみ
-      if (nc.indexOf(prefix) === 0) matched.push({ code: nc, d: item.d || '', g: item.g || '' });
-    });
-    var codes = matched.map(function(m) { return m.code; });
-    return matched.filter(function(m) {
-      // 自分より長い別コードが、自分を厳密な接頭辞として持つなら、自分は
-      // 葉ではない中間ノード（下に枝がある）なので除外する。
-      return !codes.some(function(other) {
-        return other !== m.code && other.length > m.code.length && other.indexOf(m.code) === 0;
-      });
-    });
-  }
-
-  candidates = collect(prefix6);
-  if (candidates.length === 0) candidates = collect(prefix4);
+  var candidates = collectHtsCandidates(aiClean);
 
   var listWrap = document.createElement('div');
   listWrap.className = 'ai-unverified-candidates';
@@ -2464,10 +2637,10 @@ function renderAiUnverifiedWarning(badge, aiClean) {
       row.className = 'search-result-item';
       row.innerHTML =
         '<div class="search-result-code">' + escapeHtml(stripDots(cand.code)) + '</div>' +
-        '<div class="search-result-desc">' + escapeHtml(cand.d) + '</div>' +
-        '<div class="search-result-desc">税率: ' + escapeHtml(cand.g || '(情報なし)') + '</div>';
+        '<div class="search-result-desc">' + escapeHtml(cand.desc) + '</div>' +
+        '<div class="search-result-desc">税率: ' + escapeHtml(cand.duty || '(情報なし)') + '</div>';
       row.addEventListener('click', function() {
-        selectAiCandidateCode(cand.code, cand.d, cand.g);
+        selectAiCandidateCode(cand.code, cand.desc, cand.duty);
       });
       listWrap.appendChild(row);
     });
