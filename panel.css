@@ -941,6 +941,28 @@ select:focus {
   }
 }
 
+/* AIコード未検証（公式HTSデータに存在しない）時の警告＋候補リスト。
+   #aiResultBadge の中に追加される。候補行は既存の .search-result-item を流用。 */
+.ai-unverified-box {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #ef9a9a;
+}
+.ai-unverified-candidates {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+  max-height: 240px;
+  overflow-y: auto;
+  margin-top: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  .ai-unverified-candidates {
+    background: #1e1e1e;
+    border-color: #444;
+  }
+}
+
 /* ===========================================
    TSCA証明書（FedEx）機能
    =========================================== */

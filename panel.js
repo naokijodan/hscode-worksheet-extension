@@ -31,6 +31,13 @@ var state = {
   leafKey: null,     // leaves のキー
   leafData: null,    // leaves[leafKey]
 
+  // AI入力補助（HSコード分析）が返したコードが、公式HTSデータ（search_index.json）
+  // で見つからなかった場合に true。true の間は「次へ」を止める（バグ実例:
+  // 4202.32.9550 は存在しないコードをAIがそのまま返し検証なしで通っていた）。
+  // trueにできるのは showResultFromAi() のみ。leafData を設定する他の全経路
+  // （ウィザード/検索/手動入力/章ブラウズ/保存復元/やり直し）で false に戻す。
+  aiCodeUnverified: false,
+
   // 結果フォーム値
   brand: '',
   model: '',
@@ -91,6 +98,19 @@ function showMessage(el, type, text) {
 
 function normalizeHtsno(code) {
   return code.replace(/[.\-\s]/g, '');
+}
+
+/** AI入力補助の「未検証コード」状態を解除する。leafData を確定的に設定する
+ *  経路（ウィザード／検索／章ブラウズ／手動入力／保存復元／やり直し）から呼ぶ。
+ *  未検証時に showResultFromAi() が #aiResultBadge 内に追加した警告・候補リスト
+ *  （#aiUnverifiedBox）と、結果画面のブロックメッセージ（#resultMessage）も
+ *  合わせて消す。 */
+function clearAiUnverified() {
+  state.aiCodeUnverified = false;
+  var box = document.getElementById('aiUnverifiedBox');
+  if (box) box.remove();
+  var msg = document.getElementById('resultMessage');
+  if (msg) msg.style.display = 'none';
 }
 
 /** Strip all dots, hyphens, and spaces from a code for display/storage. */
@@ -295,6 +315,7 @@ function startWizard(cat) {
   state.currentNodeId = cat.start;
   state.leafKey = null;
   state.leafData = null;
+  clearAiUnverified();
 
   document.getElementById('wizardTitle').textContent =
     cat.label.length > 20 ? cat.label.substring(0, 20) + '…' : cat.label;
@@ -372,6 +393,7 @@ function handleAnswer(nodeId, node, ans) {
     state.leafKey = ans.leaf;
     state.leafData = state.flows.leaves[ans.leaf] || null;
     state.browseChapter = null;
+    clearAiUnverified();
     showResult();
   } else if (ans.next) {
     state.currentNodeId = ans.next;
@@ -574,6 +596,7 @@ function selectSearchResult(item) {
   state.leafKey = clean;
   state.currentCategory = null;
   state.browseChapter = null;
+  clearAiUnverified();
 
   document.getElementById('searchResults').style.display = 'none';
   document.getElementById('keywordInput').value = '';
@@ -599,6 +622,10 @@ function applyManualCode() {
 
   ensureSearchIndex(function() {
     var found = state.searchMap ? state.searchMap.get(clean) : null;
+    // 手動でコードを適用した時点でユーザーの明示的な判断が入るため、AI由来の
+    // 「未検証」状態（次へをブロックするフラグ）は見つかった/見つからなかった
+    // に関わらずここで解除する（見つからない場合は下のalertで強制適用と伝える）。
+    clearAiUnverified();
     if (found) {
       state.leafData = {
         htsus: clean,
@@ -873,6 +900,7 @@ function selectTreeCode(htsno, desc, general) {
   };
   state.leafKey = clean;
   state.currentCategory = null;
+  clearAiUnverified();
 
   showResult();
 }
@@ -1565,6 +1593,19 @@ var CONFIRM_BLOCKS = 4;
 function goToConfirm() {
   if (!state.leafData) return;
 
+  // AIが返したコードが公式HTSデータに存在しないまま（未検証）の場合は先へ進ませない。
+  // 4202.32.9550（実在しない）のような値を検証なしで通していた不具合の再発防止。
+  if (state.aiCodeUnverified) {
+    var resultMsg = document.getElementById('resultMessage');
+    var warnText = 'AIが提示したHTSコードは公式HTSデータに存在しません。上の候補から実在するコードを選ぶか、手入力・検索でコードを確定してから次へ進んでください。';
+    if (resultMsg) {
+      showMessage(resultMsg, 'error', warnText);
+    } else {
+      alert(warnText);
+    }
+    return;
+  }
+
   // 値を保存
   state.brand   = document.getElementById('inputBrand').value.trim();
   state.model   = document.getElementById('inputModel').value.trim();
@@ -1775,7 +1816,11 @@ function saveProgress() {
     country:  state.country,
     qty:      state.qty,
     value:    state.value,
-    currency: state.currency
+    currency: state.currency,
+    // AIコード未検証フラグも保存する。showResult() は aiCodeUnverified が true の
+    // 間も呼ばれる（結果画面自体は表示するため）ので、保存漏れがあると復元後に
+    // 未検証コードがそのまま検証済み扱いで先へ進めてしまう。
+    aiCodeUnverified: state.aiCodeUnverified === true
   };
   chrome.storage.local.set({ _hsProgress: JSON.stringify(data) });
 }
@@ -1800,7 +1845,46 @@ function restoreProgress() {
       state.value    = d.value;
       state.currency = d.currency;
       state.currentCategory = null;
-      if (state.leafData) showResult();
+
+      // 保存時点で未検証フラグが立っていた場合のフォールバック（検索インデックスの
+      // 読み込みに失敗した等、下の再検証が実施できない場合でも取りこぼさないため）。
+      var savedUnverified = (d.aiCodeUnverified === true);
+
+      // 復元しただけでは「保存前に検証済みだったか」は分からない（保存データ自体が
+      // 古い形式でフラグを持たない場合や、search_index.json の内容が変わった場合も
+      // あるため）。goToConfirm を素通りさせないよう、復元のたびに公式データへ
+      // 再照合してから未検証フラグを確定する（AI経路の検証と同じ経路を通す）。
+      ensureSearchIndex(function() {
+        var clean = state.leafData ? normalizeHtsno(state.leafData.htsus || '') : '';
+        var found = (clean && state.searchMap) ? state.searchMap.get(clean) : null;
+
+        clearAiUnverified();
+
+        if (found) {
+          // 見つかった場合、desc/dutyが空なら公式データで補完する
+          // （AI由来で未確定のまま保存されていた場合の救済。既存の値は上書きしない）。
+          if (state.leafData) {
+            if (!state.leafData.desc) state.leafData.desc = found.d || '';
+            if (!state.leafData.duty) state.leafData.duty = found.g || '(情報なし)';
+          }
+        } else if (clean || savedUnverified) {
+          // 公式データに見つからない、または保存時点で既に未検証フラグが立っていた
+          // 場合は、再度未検証として扱う（バイパス防止）。
+          state.aiCodeUnverified = true;
+        }
+
+        if (state.leafData) {
+          showResult();
+          if (state.aiCodeUnverified) {
+            var badge = document.getElementById('aiResultBadge');
+            if (badge) {
+              badge.innerHTML = '⚠ <strong>復元したコードの確認が必要です</strong>';
+              badge.style.display = '';
+              renderAiUnverifiedWarning(badge, clean);
+            }
+          }
+        }
+      });
     } catch(e) {
       alert('復元に失敗しました: ' + e.message);
     }
@@ -1992,6 +2076,7 @@ window.addEventListener('load', function() {
     state.wizardHistory = [];
     state.currentCategory = null;
     state.browseChapter = null;
+    clearAiUnverified();
     showSection('sectionHome');
   });
 
@@ -2243,49 +2328,188 @@ function callOpenAI(pageInfo, cb) {
 }
 
 function showResultFromAi(aiData) {
-  state.leafData = {
-    htsus: (aiData.htsus || '').replace(/[.\-\s]/g, ''),
-    hs6:   (aiData.hs6   || '').replace(/[.\-\s]/g, ''),
-    desc:  aiData.description || '',
-    duty:  ''
-  };
-  state.leafKey        = state.leafData.htsus;
-  state.currentCategory = null;
-  state.browseChapter   = null;
-  state.brand     = aiData.brand   || '';
-  state.model     = aiData.model   || '';
-  state.country   = aiData.country || 'Japan';
-  // 2026-08-13対応: titleの先頭に付くようになった状態表記(Used/New)とConditionの
-  // ドロップダウン（inputCondition、選択肢は 'Pre-Owned' / 'New in Box'）が二重表記
-  // （例: タイトルは"New ..."なのにConditionは中古のまま）にならないよう、
-  // AIが判定したtitleの先頭語からConditionの初期値を同期する。titleが"New"で
-  // 始まる場合のみ'New in Box'、それ以外（"Used"または判定不能）は現状どおり
-  // 'Pre-Owned'を既定にする（TSCAの「不明ならUsed」判定基準と揃える）。
-  state.condition = /^new\b/i.test(aiData.title || '') ? 'New in Box' : 'Pre-Owned';
+  // 実例バグ: AIが返した「4202.32.9550」は実在しないコード（正しい葉は
+  // 4202.32.20.00）だったが、公式HTSデータ（search_index.json）と突き合わせず
+  // そのまま表示していた。ここで normalizeHtsno() → ensureSearchIndex() →
+  // state.searchMap で必ず検証する。手動入力の applyManualCode() と同じ検証。
+  var clean = normalizeHtsno(aiData.htsus || '');
 
-  showResult();
-  document.getElementById('inputTitle').value = sanitizeBrandPlaceholder(aiData.title || '');
+  ensureSearchIndex(function() {
+    var found = state.searchMap ? state.searchMap.get(clean) : null;
 
-  // 年齢表記の機械ガード（2026-08-13追加。TSCA機能のtscaFindInvalidAgeLabels()を流用し、
-  // TSCA共通基準の判定にする）。この画面は既存仕様どおり「For Ages X+」という任意の
-  // 年齢も許容しており、人が確認・修正してから次へ進む前提のため、TSCA/GNR/FedExのような
-  // 生成ブロックはせず、タイトルはそのまま欄に入れた上で警告メッセージを表示するのみとする。
-  var ageWarning = tscaFindInvalidAgeLabels(aiData.title || '');
+    state.leafData = {
+      htsus: clean,
+      hs6:   normalizeHtsno(aiData.hs6 || '') || clean.substring(0, 6),
+      desc:  aiData.description || '',
+      duty:  ''
+    };
 
-  // AI判定理由を表示
-  var badge = document.getElementById('aiResultBadge');
-  if (badge) {
-    var reasonText = aiData.reason ? '💡 ' + aiData.reason : '';
-    var ageWarningHtml = ageWarning.length
-      ? '<div class="ai-reason" style="color:#b3261e;">⚠ ' +
-        escapeHtml('年齢表記「' + ageWarning.join('」「') + '」を確認してください。他セラーの表記をそのままコピーしていないか、Age 13+/15+の固定値が適切か見直してください。') +
-        '</div>'
-      : '';
-    badge.innerHTML = '✨ <strong>AI入力補助</strong> — 内容を確認・修正してから次へ進んでください' +
-      (reasonText ? '<div class="ai-reason">' + escapeHtml(reasonText) + '</div>' : '') +
-      ageWarningHtml;
-    badge.style.display = '';
+    if (found) {
+      // 公式データで見つかった場合は、公式の説明文・税率で上書きする
+      // （AIの説明文より優先。税率はAI応答に元々含まれておらず常に空だったため
+      // 「税率（参考）」が常に「(情報なし)」になっていた不具合もここで解消する）。
+      state.leafData.desc = found.d || state.leafData.desc;
+      state.leafData.duty = found.g || '(情報なし)';
+      state.aiCodeUnverified = false;
+    } else {
+      state.aiCodeUnverified = true;
+    }
+
+    state.leafKey        = state.leafData.htsus;
+    state.currentCategory = null;
+    state.browseChapter   = null;
+    state.brand     = aiData.brand   || '';
+    state.model     = aiData.model   || '';
+    state.country   = aiData.country || 'Japan';
+    // 2026-08-13対応: titleの先頭に付くようになった状態表記(Used/New)とConditionの
+    // ドロップダウン（inputCondition、選択肢は 'Pre-Owned' / 'New in Box'）が二重表記
+    // （例: タイトルは"New ..."なのにConditionは中古のまま）にならないよう、
+    // AIが判定したtitleの先頭語からConditionの初期値を同期する。titleが"New"で
+    // 始まる場合のみ'New in Box'、それ以外（"Used"または判定不能）は現状どおり
+    // 'Pre-Owned'を既定にする（TSCAの「不明ならUsed」判定基準と揃える）。
+    state.condition = /^new\b/i.test(aiData.title || '') ? 'New in Box' : 'Pre-Owned';
+
+    showResult();
+    document.getElementById('inputTitle').value = sanitizeBrandPlaceholder(aiData.title || '');
+
+    // 年齢表記の機械ガード（2026-08-13追加。TSCA機能のtscaFindInvalidAgeLabels()を流用し、
+    // TSCA共通基準の判定にする）。この画面は既存仕様どおり「For Ages X+」という任意の
+    // 年齢も許容しており、人が確認・修正してから次へ進む前提のため、TSCA/GNR/FedExのような
+    // 生成ブロックはせず、タイトルはそのまま欄に入れた上で警告メッセージを表示するのみとする。
+    var ageWarning = tscaFindInvalidAgeLabels(aiData.title || '');
+
+    // AI判定理由を表示
+    var badge = document.getElementById('aiResultBadge');
+    if (badge) {
+      var reasonText = aiData.reason ? '💡 ' + aiData.reason : '';
+      var ageWarningHtml = ageWarning.length
+        ? '<div class="ai-reason" style="color:#b3261e;">⚠ ' +
+          escapeHtml('年齢表記「' + ageWarning.join('」「') + '」を確認してください。他セラーの表記をそのままコピーしていないか、Age 13+/15+の固定値が適切か見直してください。') +
+          '</div>'
+        : '';
+      badge.innerHTML = '✨ <strong>AI入力補助</strong> — 内容を確認・修正してから次へ進んでください' +
+        (reasonText ? '<div class="ai-reason">' + escapeHtml(reasonText) + '</div>' : '') +
+        ageWarningHtml;
+      badge.style.display = '';
+
+      if (!found) {
+        renderAiUnverifiedWarning(badge, clean);
+      }
+    }
+  });
+}
+
+/** showResultFromAi()、および復元時の再検証（restoreProgress）が、コードが
+ *  公式HTSデータに見つからなかった時に呼ぶ。showResultFromAi専用の値には依存しない
+ *  （badge と aiClean だけを見る）。
+ *  #aiResultBadge の中に赤い警告文と、コード前6桁（ヒットなしなら前4桁）が一致する
+ *  公式の葉ノード（8桁 or 10桁コード。下に枝がないもの）候補一覧をクリック可能な
+ *  行として追加する。行クリックで selectAiCandidateCode() を呼び、そのコードを確定させる。 */
+function renderAiUnverifiedWarning(badge, aiClean) {
+  var box = document.createElement('div');
+  box.id = 'aiUnverifiedBox';
+  box.className = 'ai-unverified-box';
+
+  var warn = document.createElement('div');
+  warn.className = 'ai-reason';
+  warn.style.color = '#b3261e';
+  warn.style.fontWeight = 'bold';
+  warn.textContent = '⚠ AIが提示したコード ' + stripDots(aiClean) +
+    ' は公式HTSデータに存在しません。下の候補から実在するコードを選ぶか、手入力・検索で確定してください。';
+  box.appendChild(warn);
+
+  var prefix6 = aiClean.substring(0, 6);
+  var prefix4 = aiClean.substring(0, 4);
+  var candidates = [];
+
+  // 葉ノードは「10桁コード」とは限らない。search_index.json には、10桁の
+  // 統計品目番号に枝分かれしない8桁コードがそのまま葉になっている項目が
+  // 多数ある（例: 9103.10.20 / .40 / .80 は8桁のまま葉で、10桁の子は無い）。
+  // そのため「8桁 or 10桁のコードを集め、その中で他の収集済みコードの
+  // 厳密な接頭辞になっているもの（＝下に枝があるので葉ではない中間ノード）を
+  // 除外する」方式で葉ノードを判定する。
+  function collect(prefix) {
+    if (!prefix || !state.searchIndex) return [];
+    var matched = [];
+    state.searchIndex.forEach(function(item) {
+      if (!item.h) return;
+      var nc = normalizeHtsno(item.h);
+      if (nc.length !== 8 && nc.length !== 10) return; // 葉候補（8桁 or 10桁）のみ
+      if (nc.indexOf(prefix) === 0) matched.push({ code: nc, d: item.d || '', g: item.g || '' });
+    });
+    var codes = matched.map(function(m) { return m.code; });
+    return matched.filter(function(m) {
+      // 自分より長い別コードが、自分を厳密な接頭辞として持つなら、自分は
+      // 葉ではない中間ノード（下に枝がある）なので除外する。
+      return !codes.some(function(other) {
+        return other !== m.code && other.length > m.code.length && other.indexOf(m.code) === 0;
+      });
+    });
   }
+
+  candidates = collect(prefix6);
+  if (candidates.length === 0) candidates = collect(prefix4);
+
+  var listWrap = document.createElement('div');
+  listWrap.className = 'ai-unverified-candidates';
+
+  if (candidates.length === 0) {
+    var none = document.createElement('div');
+    none.className = 'search-no-results';
+    none.textContent = '近いコードの候補が見つかりませんでした。手入力・検索でコードを確定してください。';
+    listWrap.appendChild(none);
+  } else {
+    candidates.slice(0, 25).forEach(function(cand) {
+      var row = document.createElement('div');
+      row.className = 'search-result-item';
+      row.innerHTML =
+        '<div class="search-result-code">' + escapeHtml(stripDots(cand.code)) + '</div>' +
+        '<div class="search-result-desc">' + escapeHtml(cand.d) + '</div>' +
+        '<div class="search-result-desc">税率: ' + escapeHtml(cand.g || '(情報なし)') + '</div>';
+      row.addEventListener('click', function() {
+        selectAiCandidateCode(cand.code, cand.d, cand.g);
+      });
+      listWrap.appendChild(row);
+    });
+    if (candidates.length > 25) {
+      var more = document.createElement('div');
+      more.className = 'search-no-results';
+      more.textContent = '他 ' + (candidates.length - 25) + ' 件（検索機能で絞り込んでください）';
+      listWrap.appendChild(more);
+    }
+  }
+
+  box.appendChild(listWrap);
+  badge.appendChild(box);
+}
+
+/** AI未検証コードの候補一覧で、実在する候補が選ばれた時に呼ぶ。leafData を
+ *  公式データで確定し、未検証フラグと警告表示・ブロックメッセージを解除する。 */
+function selectAiCandidateCode(clean, desc, duty) {
+  state.leafData = {
+    htsus: clean,
+    hs6: clean.substring(0, 6),
+    desc: desc || '',
+    duty: duty || '(情報なし)',
+    title_template: templateForCode(clean)
+  };
+  state.leafKey = clean;
+  state.aiCodeUnverified = false;
+
+  document.getElementById('resultHtsus').textContent = stripDots(clean);
+  document.getElementById('resultHs6').textContent = stripDots(state.leafData.hs6 || '');
+  document.getElementById('resultDesc').textContent = state.leafData.desc;
+  document.getElementById('resultDuty').textContent = state.leafData.duty;
+  var manualInput = document.getElementById('manualHtsus');
+  if (manualInput) manualInput.value = stripDots(clean);
+
+  renderCpscAlert(clean);
+  saveProgress(); // 候補で確定したコードを保存し、復元時に旧い未検証コードへ戻らないようにする
+
+  var box = document.getElementById('aiUnverifiedBox');
+  if (box) box.remove();
+  var resultMsg = document.getElementById('resultMessage');
+  if (resultMsg) resultMsg.style.display = 'none';
 }
 
 // -------------------------------------------------------
