@@ -19109,25 +19109,25 @@
       "title_template": "{condition} {brand} Wrist watches, of precious metal, electrically operated, mechanical display, no/1 jewel"
     },
     "bb_l_911": {
-      "htsus": "9101.21.80",
-      "hs6": "910121",
-      "desc": "Wrist watches, of precious metal, automatic winding, over 17 jewels - Other",
-      "duty": "$1.61 each + 4.4% on the case and strap, band or bracelet",
+      "htsus": "9102.11.9500",
+      "hs6": "910211",
+      "desc": "Other",
+      "duty": "76¢ each + 8.5% on the case + 2.8% on the strap, band or bracelet + 5.3% on the battery",
       "title_template": "{condition} {brand} Wrist watches, of precious metal, automatic winding, over 17 jewels - Other"
     },
     "bb_l_912": {
-      "htsus": "9102.11.10",
-      "hs6": "910211",
-      "desc": "Wrist watches, other than precious metal, electrically operated, mechanical display, no/1 jewel, base/textile strap, gold/silver-plated case",
-      "duty": "see HTS (compound)",
-      "title_template": "{condition} {brand} Wrist watches, other than precious metal, electrically operated, mechanical display, no/1 jewel, base/textile strap, gold/silver-plated case"
+      "htsus": "9102.21.5040",
+      "hs6": "910221",
+      "desc": "Other",
+      "duty": "$1.75 each + 4.8% on the case + 2.2% on the strap, band or bracelet",
+      "title_template": "{condition} {brand} Wrist watches, other than precious metal, electrically operated, mechanical display, no/1 jewel, gold/silver-plated case"
     },
     "bb_l_913": {
-      "htsus": "9102.21.10",
+      "htsus": "9102.21.7010",
       "hs6": "910221",
-      "desc": "Wrist watches, other than precious metal, automatic winding, no/1 jewel, base/textile strap",
-      "duty": "see HTS (compound)",
-      "title_template": "{condition} {brand} Wrist watches, other than precious metal, automatic winding, no/1 jewel, base/textile strap"
+      "desc": "With strap, band or bracelet of textile material or of base metal, whether or not gold- or silver-plated",
+      "duty": "$1.53 each + 4.2% on the case + 9.8% on the strap, band or bracelet",
+      "title_template": "{condition} {brand} Wrist watches, other than precious metal, automatic winding, no/1 jewel"
     },
     "bb_l_914": {
       "htsus": "9101.91.40",

@@ -1,0 +1,1364 @@
+{
+ "9101.11.40": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "40"
+  }
+ ],
+ "9101.11.80": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "40"
+  }
+ ],
+ "9101.19.40": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "40"
+  }
+ ],
+ "9101.19.80": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "40"
+  }
+ ],
+ "9101.21.50": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9101.21.80": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9101.29.10": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9101.29.20": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9101.29.30": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9101.29.40": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9101.29.50": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9101.29.90": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9101.91.40": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "30"
+  }
+ ],
+ "9101.91.80": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "30"
+  }
+ ],
+ "9101.99.20": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9101.99.40": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9101.99.60": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9101.99.80": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9102.11.10": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "40"
+  }
+ ],
+ "9102.11.25": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "40"
+  }
+ ],
+ "9102.11.30": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "40"
+  }
+ ],
+ "9102.11.45": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "40"
+  }
+ ],
+ "9102.11.50": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "40"
+  }
+ ],
+ "9102.11.65": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "40"
+  }
+ ],
+ "9102.11.70": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "40"
+  }
+ ],
+ "9102.11.95": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "40"
+  }
+ ],
+ "9102.19.20": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "40"
+  }
+ ],
+ "9102.19.40": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "40"
+  }
+ ],
+ "9102.19.60": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "40"
+  }
+ ],
+ "9102.19.80": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "40"
+  }
+ ],
+ "9102.21.10": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9102.21.25": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9102.21.30": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9102.21.50": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9102.21.70": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9102.21.90": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9102.29.04": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9102.29.10": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9102.29.15": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9102.29.20": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9102.29.25": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9102.29.30": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9102.29.35": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9102.29.40": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9102.29.45": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9102.29.50": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9102.29.55": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9102.29.60": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Strap, band or bracelet",
+   "suffix": "30"
+  }
+ ],
+ "9102.91.20": [
+  {
+   "desc": "Movement and case",
+   "suffix": "10"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "20"
+  }
+ ],
+ "9102.91.40": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "30"
+  }
+ ],
+ "9102.91.80": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "30"
+  }
+ ],
+ "9102.99.20": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9102.99.40": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9102.99.60": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9102.99.80": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9103.10.20": [
+  {
+   "desc": "Travel clocks: Movement and case",
+   "suffix": "10"
+  },
+  {
+   "desc": "Travel clocks: Battery",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other clocks: Movement and case",
+   "suffix": "30"
+  },
+  {
+   "desc": "Other clocks: Battery",
+   "suffix": "40"
+  }
+ ],
+ "9103.10.40": [
+  {
+   "desc": "Travel clocks: Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Travel clocks: Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Travel clocks: Battery",
+   "suffix": "30"
+  },
+  {
+   "desc": "Other clocks: Movement",
+   "suffix": "40"
+  },
+  {
+   "desc": "Other clocks: Case",
+   "suffix": "50"
+  },
+  {
+   "desc": "Other clocks: Battery",
+   "suffix": "60"
+  }
+ ],
+ "9103.10.80": [
+  {
+   "desc": "Travel clocks: Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Travel clocks: Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Travel clocks: Battery",
+   "suffix": "30"
+  },
+  {
+   "desc": "Other clocks: Movement",
+   "suffix": "40"
+  },
+  {
+   "desc": "Other clocks: Case",
+   "suffix": "50"
+  },
+  {
+   "desc": "Other clocks: Battery",
+   "suffix": "60"
+  }
+ ],
+ "9103.90.00": [
+  {
+   "desc": "Travel clocks: Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Travel clocks: Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other clocks: Movement",
+   "suffix": "30"
+  },
+  {
+   "desc": "Other clocks: Case",
+   "suffix": "40"
+  }
+ ],
+ "9104.00.05": [
+  {
+   "desc": "Movement and case",
+   "suffix": "10"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "20"
+  }
+ ],
+ "9104.00.10": [
+  {
+   "desc": "Movement and case",
+   "suffix": "10"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "20"
+  }
+ ],
+ "9104.00.25": [
+  {
+   "desc": "Movement and case",
+   "suffix": "10"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "20"
+  }
+ ],
+ "9104.00.30": [
+  {
+   "desc": "Movement and case",
+   "suffix": "10"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "20"
+  }
+ ],
+ "9104.00.45": [
+  {
+   "desc": "Movement and case",
+   "suffix": "10"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "20"
+  }
+ ],
+ "9104.00.50": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "30"
+  }
+ ],
+ "9104.00.60": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9105.11.40": [
+  {
+   "desc": "Clocks capable of operating only on AC power",
+   "suffix": "10"
+  },
+  {
+   "desc": "Other: Travel clocks: Movement and case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other: Travel clocks: Battery",
+   "suffix": "30"
+  },
+  {
+   "desc": "Other: Other clocks: Movement and case",
+   "suffix": "40"
+  },
+  {
+   "desc": "Other: Other clocks: Battery",
+   "suffix": "50"
+  }
+ ],
+ "9105.11.80": [
+  {
+   "desc": "Clocks capable of operating only on AC power: Movement",
+   "suffix": "05"
+  },
+  {
+   "desc": "Clocks capable of operating only on AC power: Case",
+   "suffix": "15"
+  },
+  {
+   "desc": "Other: Travel clocks: Movement",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other: Travel clocks: Case",
+   "suffix": "30"
+  },
+  {
+   "desc": "Other: Travel clocks: Battery",
+   "suffix": "40"
+  },
+  {
+   "desc": "Other: Other clocks: Movement",
+   "suffix": "50"
+  },
+  {
+   "desc": "Other: Other clocks: Case",
+   "suffix": "60"
+  },
+  {
+   "desc": "Other: Other clocks: Battery",
+   "suffix": "70"
+  }
+ ],
+ "9105.19.10": [
+  {
+   "desc": "Travel clocks: Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Travel clocks: Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other clocks: Movement",
+   "suffix": "30"
+  },
+  {
+   "desc": "Other clocks: Case",
+   "suffix": "40"
+  }
+ ],
+ "9105.19.20": [
+  {
+   "desc": "Travel clocks: Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Travel clocks: Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other clocks: Movement",
+   "suffix": "30"
+  },
+  {
+   "desc": "Other clocks: Case",
+   "suffix": "40"
+  }
+ ],
+ "9105.19.30": [
+  {
+   "desc": "Travel clocks: Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Travel clocks: Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other clocks: Movement",
+   "suffix": "30"
+  },
+  {
+   "desc": "Other clocks: Case",
+   "suffix": "40"
+  }
+ ],
+ "9105.21.40": [
+  {
+   "desc": "Clocks capable of operating only on AC power",
+   "suffix": "10"
+  },
+  {
+   "desc": "Other clocks: Movement and case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other clocks: Battery",
+   "suffix": "30"
+  }
+ ],
+ "9105.21.80": [
+  {
+   "desc": "Clocks capable of operating only on AC power: Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Clocks capable of operating only on AC power: Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other clocks: Movement",
+   "suffix": "30"
+  },
+  {
+   "desc": "Other clocks: Case",
+   "suffix": "40"
+  },
+  {
+   "desc": "Other clocks: Battery",
+   "suffix": "50"
+  }
+ ],
+ "9105.29.10": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9105.29.20": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9105.29.30": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9105.91.40": [
+  {
+   "desc": "Clocks capable of operating only on AC power",
+   "suffix": "10"
+  },
+  {
+   "desc": "Other clocks: Movement and case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other clocks: Battery",
+   "suffix": "30"
+  }
+ ],
+ "9105.91.80": [
+  {
+   "desc": "Clocks capable of operating only on AC power: Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Clocks capable of operating only on AC power: Case",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other clocks: Movement",
+   "suffix": "30"
+  },
+  {
+   "desc": "Other clocks: Case",
+   "suffix": "40"
+  },
+  {
+   "desc": "Other clocks: Battery",
+   "suffix": "50"
+  }
+ ],
+ "9105.99.20": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9105.99.30": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9105.99.40": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Case",
+   "suffix": "20"
+  }
+ ],
+ "9106.90.55": [
+  {
+   "desc": "Apparatus",
+   "suffix": "10"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "20"
+  }
+ ],
+ "9108.11.40": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "20"
+  }
+ ],
+ "9108.11.80": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "20"
+  }
+ ],
+ "9108.12.00": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "20"
+  }
+ ],
+ "9108.19.40": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "20"
+  }
+ ],
+ "9108.19.80": [
+  {
+   "desc": "Movement",
+   "suffix": "10"
+  },
+  {
+   "desc": "Battery",
+   "suffix": "20"
+  }
+ ],
+ "9109.10.10": [
+  {
+   "desc": "Clock movements capable of operating only on AC power",
+   "suffix": "10"
+  },
+  {
+   "desc": "Other clock movements: Movement",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other clock movements: Battery",
+   "suffix": "30"
+  }
+ ],
+ "9109.10.20": [
+  {
+   "desc": "Clock movements capable of operating only on AC power",
+   "suffix": "10"
+  },
+  {
+   "desc": "Other clock movements: Movement",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other clock movements: Battery",
+   "suffix": "30"
+  }
+ ],
+ "9109.10.30": [
+  {
+   "desc": "Clock movements capable of operating only on AC power",
+   "suffix": "10"
+  },
+  {
+   "desc": "Other clock movements: Movement",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other clock movements: Battery",
+   "suffix": "30"
+  }
+ ],
+ "9109.10.40": [
+  {
+   "desc": "Clock movements capable of operating only on AC power",
+   "suffix": "10"
+  },
+  {
+   "desc": "Other clock movements: Movement",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other clock movements: Battery",
+   "suffix": "30"
+  }
+ ],
+ "9109.10.50": [
+  {
+   "desc": "Clock movements capable of operating only on AC power",
+   "suffix": "10"
+  },
+  {
+   "desc": "Other clock movements: Movement",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other clock movements: Battery",
+   "suffix": "30"
+  }
+ ],
+ "9109.10.60": [
+  {
+   "desc": "Clock movements capable of operating only on AC power",
+   "suffix": "10"
+  },
+  {
+   "desc": "Other clock movements: Movement",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other clock movements: Battery",
+   "suffix": "30"
+  }
+ ],
+ "9109.10.70": [
+  {
+   "desc": "Clock movements capable of operating only on AC power",
+   "suffix": "10"
+  },
+  {
+   "desc": "Other clock movements: Movement",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other clock movements: Battery",
+   "suffix": "30"
+  }
+ ],
+ "9109.10.80": [
+  {
+   "desc": "Clock movements capable of operating only on AC power",
+   "suffix": "10"
+  },
+  {
+   "desc": "Other clock movements: Movement",
+   "suffix": "20"
+  },
+  {
+   "desc": "Other clock movements: Battery",
+   "suffix": "30"
+  }
+ ]
+}

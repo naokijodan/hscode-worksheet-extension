@@ -17,6 +17,17 @@ var state = {
   searchMap: null,        // Map: normalizeHtsno(h) -> {d, g}
   searchIndexLoading: false,
   searchIndexCallbacks: [],
+  // 8桁の統計品目番号（10桁）に枝分かれしている8桁コードの集合（Set<string>）。
+  // ensureSearchIndex() で search_index.json を読んだ時に構築する。ここに無い
+  // 8桁コードは「公式データが8桁までしか持たない行」（＝10桁化には統計注記の
+  // 下2桁が必要）と判定できる（verifyHtsCode() が使う）。
+  eightDigitParents: null,
+
+  // HTS統計注記の下2桁テーブル（遅延ロード。現状は第91類の時計・クロックのみ収録。
+  // data/hts_stat_suffix.json: {"9101.11.40": [{"suffix":"10","desc":"Movement"}, ...], ...}）
+  statSuffixMap: null,
+  statSuffixLoading: false,
+  statSuffixCallbacks: [],
 
   // 別名辞書（遅延ロード）
   aliases: null,          // Object: 別名キー(小文字) -> [正規化コード, ...]
@@ -139,6 +150,267 @@ function dotCode(s) {
   return c;
 }
 
+// -------------------------------------------------------
+// HTSコード検証（2026-09-16追加）
+// -------------------------------------------------------
+/**
+ * verifyHtsCode(clean) — 与えられた桁のみのコード（normalizeHtsno済み）を
+ * 公式データ（state.searchMap, search_index.json）と統計注記テーブル
+ * （state.statSuffixMap, data/hts_stat_suffix.json）に照らして判定する純粋関数。
+ *
+ * 背景（実測事実）: 公式USITCデータには「8桁までしか行が無い」項番が多数ある
+ * （例: 9102.29.60 は8桁のまま葉で、10桁の子は存在しない）。10桁目までの
+ * 内訳（統計品目番号／statistical suffix）はJSONではなく各類の
+ * Statistical Notes（PDFのみ）で定義されているため、正しい10桁コード
+ * （例: 9102.29.60.10）を「公式データに無い」として8桁へ差し戻すのは誤り。
+ * 米国向け通関申告には10桁が必要なので、8桁のまま確定させるのも誤り。
+ * この関数はその中間状態（'parent8'）を判定し、呼び出し側が「8桁までは公式
+ * データで確認済み・下2桁は統計注記で決まる」ことを表示できるようにする。
+ *
+ * @param {string} clean 桁のみ（ドット無し）のコード文字列
+ * @returns {object} 以下のいずれか:
+ *   {status:'exact', code, desc, duty}
+ *     — clean がそのまま公式データ（searchMap）に存在する。
+ *   {status:'parent8', code(=10桁のclean), desc, duty, parent(=8桁), suffixOk, allowed}
+ *     — clean が10桁で、前8桁が公式データに存在し、かつその8桁行に10桁の子が
+ *       無い（＝8桁のまま公式の葉）場合。suffixOk: 統計注記テーブルにその8桁行が
+ *       あり、下2桁がその一覧に含まれていれば true／一覧にあるが含まれなければ
+ *       false／統計注記テーブルにその8桁行が無ければ null（第91類以外など不明）。
+ *       allowed: 統計注記テーブルの一覧（無ければ null）。
+ *   {status:'short', code, found, desc, duty}
+ *     — clean が10桁未満（8桁以下）。found は clean がそのまま公式データに
+ *       存在するかどうか（存在すればdesc/dutyを含める）。
+ *   {status:'missing'}
+ *     — 上記のいずれにも当てはまらない（10桁で前8桁も存在しない、または
+ *       前8桁行に10桁の子が既にある＝本来は10桁で探すべきなのに見つからない、
+ *       または11桁以上など想定外の桁数）。
+ */
+function verifyHtsCode(clean) {
+  clean = clean || '';
+  var map = state.searchMap;
+
+  // 1. 10桁未満（8桁以下）は、公式データに存在するか否かに関わらず常に
+  //    「短い」として扱う（米国向け通関申告には10桁が必要なため）。桁数チェックを
+  //    完全一致チェックより先に行う点に注意（8桁のまま公式データに載っている
+  //    行 — 例: 9101.11.40 — をここで誤って'exact'として即確定させない）。
+  if (clean.length < 10) {
+    var shortEntry = map ? map.get(clean) : null;
+    return {
+      status: 'short',
+      code: clean,
+      found: !!shortEntry,
+      desc: shortEntry ? (shortEntry.d || '') : '',
+      duty: shortEntry ? (shortEntry.g || '') : ''
+    };
+  }
+
+  // 2. 10桁ちょうどで、公式データにそのまま存在する（完全一致）。
+  if (clean.length === 10 && map && map.has(clean)) {
+    var exact = map.get(clean);
+    return { status: 'exact', code: clean, desc: exact.d || '', duty: exact.g || '(情報なし)' };
+  }
+
+  if (clean.length === 10) {
+    var eight = clean.substring(0, 8);
+    var eightEntry = map ? map.get(eight) : null;
+    var hasChildren = !!(state.eightDigitParents && state.eightDigitParents.has(eight));
+
+    if (eightEntry && !hasChildren) {
+      // 8桁までは公式データに存在し、10桁の子は無い＝8桁が公式の葉。
+      // 下2桁（統計品目番号）が正しいかを統計注記テーブルで確認する。
+      var suffix = clean.substring(8, 10);
+      var stat = state.statSuffixMap ? state.statSuffixMap[dotCode(eight)] : null;
+      var suffixOk = null;
+      var allowed = null;
+      if (stat && stat.length) {
+        allowed = stat;
+        suffixOk = stat.some(function(s) { return s.suffix === suffix; });
+      }
+      // 2026-09-16追加: 腕時計のWatch Worksheet運用コード（WATCH_WORKSHEET_CODES、
+      // 3件）は、公式の統計注記テーブルとは無関係にプロダクトオーナー承認済みの
+      // 固定コードのため、統計注記の一致・不一致に関わらず常にOK扱いにする
+      // （実測: 9102215040→統計注記は10/20/30のみで下2桁40は本来不一致、
+      // 9102119500→統計注記は10/20/30/40のみで下2桁00は本来不一致。どちらも
+      // このガードが無いと赤警告が誤って出る）。
+      var isWatchTable = WATCH_WORKSHEET_CODES.indexOf(clean) !== -1;
+      if (isWatchTable) {
+        suffixOk = true;
+      }
+      return {
+        status: 'parent8',
+        code: clean,
+        desc: eightEntry.d || '',
+        duty: eightEntry.g || '(情報なし)',
+        parent: eight,
+        suffixOk: suffixOk,
+        allowed: allowed,
+        watchTable: isWatchTable
+      };
+    }
+    // 前8桁が存在しない、または10桁の子が別にある（＝10桁で探すべきなのに
+    // 見つからない）場合は「見つからない」として扱う。
+    return { status: 'missing' };
+  }
+
+  // 11桁以上など想定外
+  return { status: 'missing' };
+}
+
+/** #resultHtsusLabel（コードボックスの見出し）を verifyHtsCode() の結果に合わせて更新する。 */
+function updateHtsusLabel(vr) {
+  var labelEl = document.getElementById('resultHtsusLabel');
+  if (!labelEl) return;
+  if (vr.status === 'short' && vr.code.length === 0) {
+    // コード自体が未確定（例: flows.jsonの「要確認」プレースホルダー葉）。
+    // 「0桁」という数値表示は誤解を招くため専用の文言にする。
+    labelEl.textContent = 'HTSUS（未確定）';
+  } else if (vr.status === 'short') {
+    labelEl.textContent = 'HTSUS（' + vr.code.length + '桁・下2桁の統計品目番号が必要）';
+  } else {
+    labelEl.textContent = 'HTSUS（10桁）';
+  }
+}
+
+/** #htsStatSuffixNote（コードボックス直下の注記欄）を verifyHtsCode() の結果に
+ *  合わせて描画する。ブロックはしない（表示のみ）。実際にconfirmへ進めるかどうかは
+ *  goToConfirm() の10桁ガードが別途判定する。 */
+function renderStatSuffixNote(noteEl, vr) {
+  if (!noteEl) return;
+
+  if (vr.status === 'short' && vr.code.length === 0) {
+    // コード自体が未確定（例: flows.jsonの「要確認」プレースホルダー葉）。
+    // 「0桁までしかありません」は事実と異なる誤解を招く表現なので専用文言にする。
+    noteEl.className = 'message error';
+    noteEl.textContent = 'このルートではコードが確定していません。キーワード検索・章から探す・手動入力の' +
+      'いずれかで10桁のコードを確定してください。';
+    noteEl.style.display = '';
+    return;
+  }
+
+  if (vr.status === 'short') {
+    var stat8 = (vr.code.length === 8 && state.statSuffixMap) ? state.statSuffixMap[dotCode(vr.code)] : null;
+    var msg;
+    if (stat8 && stat8.length) {
+      var list = stat8.map(function(s) { return s.suffix + '=' + s.desc; }).join(' / ');
+      msg = '公式HTSはこの行を8桁までしか持ちません。下2桁（統計品目番号）を確認し、' +
+        '「HTSUSコード（手動修正可）」欄に10桁で入力してください。この行で認められる下2桁: ' + list;
+    } else {
+      msg = 'このコードは' + vr.code.length + '桁までしかありません。公式HTSの統計注記で下2桁を確認し、' +
+        '「HTSUSコード（手動修正可）」欄に10桁で入力してください。';
+    }
+    noteEl.className = 'message error';
+    noteEl.textContent = msg;
+    noteEl.style.display = '';
+    return;
+  }
+
+  if (vr.status === 'parent8') {
+    // 2026-09-16追加: 腕時計のWatch Worksheet運用コード（3件）は、下の赤警告・
+    // グレー(info)注記のどちらも出さず、専用の青い注記だけを表示する
+    // （公式の統計注記との一致・不一致は無関係。verifyHtsCode()側でsuffixOk済み）。
+    if (vr.watchTable) {
+      noteEl.className = 'message info';
+      noteEl.textContent = '⌚ Watch Worksheet と同じ運用コードです。';
+      noteEl.style.display = '';
+      return;
+    }
+    var chapterNo = vr.parent.substring(0, 2);
+    var suffixDigits = vr.code.substring(8, 10);
+    if (vr.suffixOk === false) {
+      var allowedList = (vr.allowed || []).map(function(s) { return s.suffix + '=' + s.desc; }).join(' / ');
+      noteEl.className = 'message error';
+      noteEl.textContent = '下2桁 ' + suffixDigits + ' は公式の統計注記にありません。この行で認められる下2桁: ' +
+        allowedList + '（公式表はこの行を8桁までしか持たず、下2桁は第' + chapterNo + '類の統計注記で決まります）';
+    } else if (vr.suffixOk === null) {
+      noteEl.className = 'message info';
+      noteEl.textContent = '下2桁は公式JSONにない値です。公式HTSの統計注記で確認してください。' +
+        '（公式表はこの行を8桁までしか持たず、下2桁は第' + chapterNo + '類の統計注記で決まります）';
+    } else {
+      noteEl.className = 'message info';
+      noteEl.textContent = '公式表はこの行を8桁までしか持たず、下2桁「' + suffixDigits +
+        '」は第' + chapterNo + '類の統計注記に基づく値です（確認済み）。';
+    }
+    noteEl.style.display = '';
+    return;
+  }
+
+  noteEl.style.display = 'none';
+  noteEl.textContent = '';
+}
+
+/** 結果画面（#sectionResult）が state.leafData.htsus を表示するたびに呼ぶ共通処理。
+ *  ラベル（#resultHtsusLabel）と注記欄（#htsStatSuffixNote）を verifyHtsCode() の
+ *  結果に合わせて更新する。search_index.json / hts_stat_suffix.json が未ロードの
+ *  場合は読み込んでから再描画する（結果画面自体はデータ待ちで固まらせない）。
+ *  showResult()（ウィザード葉・検索・章ブラウズ・AI確定・復元の全経路が通る）、
+ *  および showResult() を経由しない直接DOM操作の2箇所（applyManualCode,
+ *  selectAiCandidateCode）から呼ぶ。 */
+function updateHtsStatSuffixDisplay() {
+  var noteEl = document.getElementById('htsStatSuffixNote');
+  if (!noteEl) return;
+  var clean = normalizeHtsno(state.leafData ? (state.leafData.htsus || '') : '');
+
+  function render() {
+    var vr = verifyHtsCode(clean);
+    updateHtsusLabel(vr);
+    renderStatSuffixNote(noteEl, vr);
+  }
+
+  if (state.searchMap && state.statSuffixMap) {
+    render();
+  } else {
+    noteEl.style.display = 'none';
+    ensureSearchIndex(function() { ensureStatSuffix(function() { render(); }); });
+  }
+}
+
+// -------------------------------------------------------
+// 腕時計 Watch Worksheet 判定表（2026-09-16追加、v1.7.15）
+// -------------------------------------------------------
+/**
+ * WATCH_WORKSHEET_HTS — 腕時計のHTSUSは、公式USITCの行単位テーブル（search_index.json）
+ * を直接読むのではなく、この固定表（Watch Worksheetの運用ルール。既存のWatch
+ * セクション ~getHtsCandidates() が元々持っていたルール5の代表コード3つ）を正とする
+ * （プロダクトオーナー決定・2026-09-16）。ムーブメント種別（クオーツ／機械式）×
+ * ケースが貴金属のみで出来ているか否か、の2軸で決まる。「AI HS分析」経路
+ * （showResultFromAi）と、Watchセクション既存のgetHtsCandidates()の両方がここを
+ * 共通の元データとして参照する（単一の真実源）。
+ *
+ * クオーツ＋貴金属ケースの組み合わせは、Watch Worksheetの既存ルールに元々規定が
+ * 無い（getHtsCandidates()は元々この組み合わせで候補なし=[]を返していた）。
+ * watchWorksheetCode()もこれをそのまま踏襲し、この組み合わせでは null を返す
+ * （2026-09-16レビュー指摘: 表に無い組み合わせを推測で埋めてはならない。既存の
+ * Watchセクションと完全に同じ「候補なし」挙動にする）。
+ */
+var WATCH_WORKSHEET_HTS = [
+  { code: '9102.21.5040', movement: 'quartz',     preciousCase: false, desc: '腕時計 / クオーツ / 非貴金属ケース' },
+  { code: '9102.21.7010', movement: 'mechanical', preciousCase: false, desc: '腕時計 / 機械式 / 非貴金属ケース' },
+  { code: '9102.11.9500', movement: 'mechanical', preciousCase: true,  desc: '腕時計 / 機械式 / 貴金属ケース' }
+];
+
+/** WATCH_WORKSHEET_HTS の3コード（桁のみ、ドット無し）。統計注記の警告免除
+ *  チェック（verifyHtsCode/renderStatSuffixNote）で使う。 */
+var WATCH_WORKSHEET_CODES = WATCH_WORKSHEET_HTS.map(function(e) { return stripDots(e.code); });
+
+/**
+ * watchWorksheetCode(movement, preciousCase) — Watch Worksheet表から10桁コード
+ * （桁のみ）を返す純粋関数。
+ * @param {string} movement 'quartz' | 'mechanical'
+ * @param {boolean} preciousCase true=ケースが貴金属のみで構成
+ * @returns {string|null} 10桁コード（該当なしは null）
+ *
+ * クオーツ＋貴金属ケースは表に無い組み合わせのため null を返す（既存の
+ * Watchセクション getHtsCandidates() が候補なし=[]を返す組み合わせと同じ。
+ * 呼び出し側は null を「推測不能」として扱い、コードを確定させてはならない）。
+ */
+function watchWorksheetCode(movement, preciousCase) {
+  var isPrecious = !!preciousCase;
+  var entry = WATCH_WORKSHEET_HTS.filter(function(e) {
+    return e.movement === movement && e.preciousCase === isPrecious;
+  })[0];
+  return entry ? stripDots(entry.code) : null;
+}
+
 function escapeHtml(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
@@ -223,9 +495,16 @@ function ensureSearchIndex(cb) {
       state.searchIndex = d;
       // Build lookup map: normalizeHtsno(h) -> {d, g}
       state.searchMap = new Map();
+      // 10桁の統計品目番号を持つ8桁コード（＝下に枝がある＝8桁単独では葉ではない）の集合。
+      // ここに無い8桁コードは公式データが8桁までしか持たない行（verifyHtsCode()が使う）。
+      state.eightDigitParents = new Set();
       d.forEach(function(item) {
         if (item.h) {
-          state.searchMap.set(normalizeHtsno(item.h), { d: item.d, g: item.g });
+          var nc = normalizeHtsno(item.h);
+          state.searchMap.set(nc, { d: item.d, g: item.g });
+          if (nc.length === 10) {
+            state.eightDigitParents.add(nc.substring(0, 8));
+          }
         }
       });
       state.searchIndexLoading = false;
@@ -245,8 +524,13 @@ function ensureSearchIndex(cb) {
             return { h: r.htsno || '', d: r.description || '', c: '', g: r.general || '' };
           });
           state.searchMap = new Map();
+          state.eightDigitParents = new Set();
           state.searchIndex.forEach(function(item){
-            if (item.h) state.searchMap.set(normalizeHtsno(item.h), { d: item.d, g: item.g });
+            if (item.h) {
+              var nc = normalizeHtsno(item.h);
+              state.searchMap.set(nc, { d: item.d, g: item.g });
+              if (nc.length === 10) state.eightDigitParents.add(nc.substring(0, 8));
+            }
           });
           cb();
           var cbs = state.searchIndexCallbacks.splice(0);
@@ -255,10 +539,38 @@ function ensureSearchIndex(cb) {
         .catch(function(){
           state.searchIndex = [];
           state.searchMap = new Map();
+          state.eightDigitParents = new Set();
           cb();
           var cbs = state.searchIndexCallbacks.splice(0);
           cbs.forEach(function(fn){ fn(); });
         });
+    });
+}
+
+// -------------------------------------------------------
+// 遅延ロード: hts_stat_suffix.json（第91類など、公式HTSが8桁までしか持たない行の
+// 統計品目番号テーブル。初回アクセス時のみ。ensureSearchIndex()と同じパターン）
+// -------------------------------------------------------
+function ensureStatSuffix(cb) {
+  if (state.statSuffixMap) { cb(); return; }
+  if (state.statSuffixLoading) { state.statSuffixCallbacks.push(cb); return; }
+  state.statSuffixLoading = true;
+  fetch(chrome.runtime.getURL('data/hts_stat_suffix.json'))
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      state.statSuffixMap = d || {};
+      state.statSuffixLoading = false;
+      cb();
+      var cbs = state.statSuffixCallbacks.splice(0);
+      cbs.forEach(function(fn){ fn(); });
+    })
+    .catch(function(e){
+      console.error('hts_stat_suffix.json load error', e);
+      state.statSuffixMap = {};
+      state.statSuffixLoading = false;
+      cb();
+      var cbs = state.statSuffixCallbacks.splice(0);
+      cbs.forEach(function(fn){ fn(); });
     });
 }
 
@@ -449,6 +761,7 @@ function showResult() {
   showSection('sectionResult');
   saveProgress();
   renderCpscAlert(stripDots(leaf.htsus || state.leafKey || ''));
+  updateHtsStatSuffixDisplay();
 }
 
 // 与えられたコードが flows に登録済みの直接コード葉なら、そのテンプレを返す（未登録なら汎用）
@@ -621,34 +934,46 @@ function applyManualCode() {
   }
 
   ensureSearchIndex(function() {
-    var found = state.searchMap ? state.searchMap.get(clean) : null;
-    // 手動でコードを適用した時点でユーザーの明示的な判断が入るため、AI由来の
-    // 「未検証」状態（次へをブロックするフラグ）は見つかった/見つからなかった
-    // に関わらずここで解除する（見つからない場合は下のalertで強制適用と伝える）。
-    clearAiUnverified();
-    if (found) {
-      state.leafData = {
-        htsus: clean,
-        hs6: clean.substring(0, 6),
-        desc: found.d || '',
-        duty: found.g || '(情報なし)',
-        title_template: templateForCode(clean)
-      };
-      state.leafKey = clean;
-    } else {
-      // コードがデータにない場合でも手動で設定
-      state.leafData = state.leafData || {};
-      state.leafData.htsus = clean || val;
-      state.leafData.hs6 = clean.length >= 6 ? clean.substring(0, 6) : clean;
-      alert('このコードはデータベースに見つかりませんでした。手動入力として処理します。');
-    }
-    document.getElementById('resultHtsus').textContent = stripDots(state.leafData.htsus);
-    document.getElementById('resultHs6').textContent = stripDots(state.leafData.hs6 || '');
-    if (found) {
-      document.getElementById('resultDesc').textContent = state.leafData.desc;
-      document.getElementById('resultDuty').textContent = state.leafData.duty;
-    }
-    renderCpscAlert(state.leafData.htsus || '');
+    ensureStatSuffix(function() {
+      // 手動でコードを適用した時点でユーザーの明示的な判断が入るため、AI由来の
+      // 「未検証」状態（次へをブロックするフラグ）は見つかった/見つからなかった
+      // に関わらずここで解除する（見つからない場合は下のalertで強制適用と伝える）。
+      clearAiUnverified();
+
+      // verifyHtsCode() で判定する。'exact'（そのまま公式データに存在）と
+      // 'parent8'（10桁だが8桁までしか公式データが無い行の延長で、10桁の子が
+      // 他に無い＝正当な10桁コード）は同じ扱いで受理する。以前は完全一致以外を
+      // 一律「データベースに見つかりませんでした」としていたため、
+      // 9102.29.60.10 のような正しい10桁コードを手入力しても強制的に
+      // 「手動入力（未確認）」扱いになってしまっていた。
+      var vr = verifyHtsCode(clean);
+      var knownShort = (vr.status === 'short' && vr.found);
+
+      if (vr.status === 'exact' || vr.status === 'parent8' || knownShort) {
+        state.leafData = {
+          htsus: vr.code,
+          hs6: vr.code.length >= 6 ? vr.code.substring(0, 6) : vr.code,
+          desc: vr.desc || '',
+          duty: vr.duty || '(情報なし)',
+          title_template: templateForCode(vr.code)
+        };
+        state.leafKey = vr.code;
+      } else {
+        // コードがデータにない場合でも手動で設定
+        state.leafData = state.leafData || {};
+        state.leafData.htsus = clean || val;
+        state.leafData.hs6 = clean.length >= 6 ? clean.substring(0, 6) : clean;
+        alert('このコードはデータベースに見つかりませんでした。手動入力として処理します。');
+      }
+      document.getElementById('resultHtsus').textContent = stripDots(state.leafData.htsus);
+      document.getElementById('resultHs6').textContent = stripDots(state.leafData.hs6 || '');
+      if (vr.status === 'exact' || vr.status === 'parent8' || knownShort) {
+        document.getElementById('resultDesc').textContent = state.leafData.desc;
+        document.getElementById('resultDuty').textContent = state.leafData.duty;
+      }
+      renderCpscAlert(state.leafData.htsus || '');
+      updateHtsStatSuffixDisplay();
+    });
   });
 }
 
@@ -1593,6 +1918,26 @@ var CONFIRM_BLOCKS = 4;
 function goToConfirm() {
   if (!state.leafData) return;
 
+  // 2026-09-16対応: 公式HTSは8桁までしか行を持たない項番が多数あり（例:
+  // 9102.29.60系）、その場合は下2桁（統計品目番号）まで確定していないと
+  // 米国向け通関申告に使える10桁のコードにならない。経路（ウィザード／検索／
+  // 章ブラウズ／AI／手動入力／保存復元のどれか）を問わず、ここで機械的に
+  // 10桁ちょうどであることを保証してから先へ進ませる（AI未検証ブロックとは別軸）。
+  var cleanForLenCheck = normalizeHtsno(state.leafData.htsus || '');
+  if (cleanForLenCheck.length !== 10) {
+    var lenMsg = document.getElementById('resultMessage');
+    var lenWarnText = cleanForLenCheck
+      ? 'このコードは' + cleanForLenCheck.length + '桁までしかありません。公式HTSの統計注記を確認し、' +
+        '10桁の統計品目番号まで「HTSUSコード（手動修正可）」欄に入力してから次へ進んでください。'
+      : 'HTSUSコードが未確定です。検索・手動入力・章から探すのいずれかでコードを確定してから次へ進んでください。';
+    if (lenMsg) {
+      showMessage(lenMsg, 'error', lenWarnText);
+    } else {
+      alert(lenWarnText);
+    }
+    return;
+  }
+
   // AIが返したコードが公式HTSデータに存在しないまま（未検証）の場合は先へ進ませない。
   // 4202.32.9550（実在しない）のような値を検証なしで通していた不具合の再発防止。
   if (state.aiCodeUnverified) {
@@ -1854,22 +2199,45 @@ function restoreProgress() {
       // 古い形式でフラグを持たない場合や、search_index.json の内容が変わった場合も
       // あるため）。goToConfirm を素通りさせないよう、復元のたびに公式データへ
       // 再照合してから未検証フラグを確定する（AI経路の検証と同じ経路を通す）。
-      ensureSearchIndex(function() {
+      ensureSearchIndex(function() { ensureStatSuffix(function() {
         var clean = state.leafData ? normalizeHtsno(state.leafData.htsus || '') : '';
-        var found = (clean && state.searchMap) ? state.searchMap.get(clean) : null;
+        var vr = verifyHtsCode(clean);
 
         clearAiUnverified();
 
-        if (found) {
-          // 見つかった場合、desc/dutyが空なら公式データで補完する
-          // （AI由来で未確定のまま保存されていた場合の救済。既存の値は上書きしない）。
+        if (vr.status === 'exact' || vr.status === 'parent8') {
+          // 見つかった場合、htsusを正規化した桁数（parent8は10桁）で保証し、
+          // desc/dutyが空なら公式データで補完する（AI由来で未確定のまま
+          // 保存されていた場合の救済。既存の値は上書きしない）。
           if (state.leafData) {
-            if (!state.leafData.desc) state.leafData.desc = found.d || '';
-            if (!state.leafData.duty) state.leafData.duty = found.g || '(情報なし)';
+            state.leafData.htsus = vr.code;
+            if (!state.leafData.desc) state.leafData.desc = vr.desc || '';
+            if (!state.leafData.duty) state.leafData.duty = vr.duty || '(情報なし)';
+          }
+        } else if (vr.status === 'short') {
+          // 8桁までしか公式データが無い行など、桁不足のまま保存されていたコード。
+          // 「未検証」（＝存在しないコード）扱いのUIは出さず、showResult()経由の
+          // updateHtsStatSuffixDisplay()のラベル・注記表示とgoToConfirm()の
+          // 10桁ガードに判定を委ねる。desc/dutyが空なら分かる範囲で補完する。
+          if (state.leafData) {
+            if (!state.leafData.desc && vr.desc) state.leafData.desc = vr.desc;
+            if (!state.leafData.duty && vr.duty) state.leafData.duty = vr.duty;
+          }
+          // 2026-09-16レビュー指摘: 腕時計のWatch Worksheet表で「ムーブメント／
+          // ケース素材が不明」または「組み合わせが表に無い」場合
+          // （showResultFromAiWatch）は htsus を空文字で保存する。空文字は
+          // 常に長さ0 → verifyHtsCode()は必ず'short'になり、上のgoToConfirm()の
+          // 10桁ガードでは元々ブロックされ続けるが、保存時に立っていた
+          // aiCodeUnverifiedフラグをここで無条件にfalseへ戻すと、復元直後の
+          // 結果画面に「復元したコードの確認が必要です」の警告が出なくなる
+          // （下のif (state.aiCodeUnverified)ブロックが素通りする）。
+          // savedUnverifiedを見て再度trueに戻す。
+          if (savedUnverified) {
+            state.aiCodeUnverified = true;
           }
         } else if (clean || savedUnverified) {
-          // 公式データに見つからない、または保存時点で既に未検証フラグが立っていた
-          // 場合は、再度未検証として扱う（バイパス防止）。
+          // 公式データに全く見つからない（'missing'）、または保存時点で既に
+          // 未検証フラグが立っていた場合は、再度未検証として扱う（バイパス防止）。
           state.aiCodeUnverified = true;
         }
 
@@ -1884,7 +2252,7 @@ function restoreProgress() {
             }
           }
         }
-      });
+      }); });
     } catch(e) {
       alert('復元に失敗しました: ' + e.message);
     }
@@ -2291,6 +2659,9 @@ function callOpenAI(pageInfo, cb) {
     '  "model": model number or product/character name',
     '  "title": customs declaration title in plain English, max 40 chars, no marketing language, no Japanese characters. Format: <Condition> <Brand> <Character/Model> <Item Type> <Age> (the angle brackets are just labels, never print them). <Brand> is optional — include the real brand name when known; when the brand is unknown or the item is unbranded, OMIT that word/segment entirely and do NOT write any placeholder in its place (never write "Unbranded", "No Brand", "Generic", "[Brand]", or empty brackets []). Start the title with the condition word "Used" or "New" as the very first word: use "Used" if the source indicates a secondhand item (中古, used, pre-owned, 目立った傷や汚れなし, etc.); use "New" ONLY if the source clearly states the item is new/unused/unopened (新品, 未使用, 未開封, etc.); if the condition cannot be determined, use "Used" (items handled by this tool come from Japanese secondhand marketplaces). Always include brand name and character or model name when available. Append age requirement at the end when applicable: use "For Ages 15+" for anime/manga figures and collectibles (not toys for actual play), "For Ages 13+" for trading cards and card games, "For Ages X+" for toys with a clear target age. IGNORE any age label that appears elsewhere in the source information (e.g. another seller\'s listing showing "4+", "対象年齢6歳以上", etc.) — such labels MUST NOT be copied into the title; only use the age rules above. Omit age if the product is not a toy or collectible. Example: "Used Gundam RX-78-2 Figure For Ages 15+"',
     '  "country": country of origin — default "Japan" for secondhand Japanese marketplace items unless clearly otherwise',
+    '  "isWristwatch": true or false. true if the product is a wrist watch or pocket watch (HTSUS heading 9101 or 9102), false for everything else. Always include this field.',
+    '  "watchMovement": ONLY when isWristwatch is true: one of exactly "quartz" (battery/quartz movement), "mechanical" (hand-wound or automatic mechanical movement), or "unknown" if you cannot tell from the source information. Omit this field (or use "unknown") when isWristwatch is false.',
+    '  "watchCaseWhollyPreciousMetal": ONLY when isWristwatch is true: true if the watch case is wholly made of precious metal (solid gold, silver, or platinum), false if the case is base/stainless metal or merely gold/silver-plated or clad (plating/cladding is NOT "wholly of precious metal"), or "unknown" if you cannot tell. Omit this field (or use "unknown") when isWristwatch is false.',
     '  "reason": one sentence in Japanese explaining why you chose this HTSUS code',
     'Return ONLY the JSON object. No markdown, no explanation outside the JSON.'
   ].join('\n');
@@ -2346,8 +2717,25 @@ function callOpenAIReselect(pageInfo, aiClean, candidates, cb) {
   lines.push('');
   lines.push('Your previously proposed HTSUS code ' + stripDots(aiClean) + ' does not exist in the official 2026 HTSUS.');
   lines.push('Here is a list of official candidate HTSUS codes near your original guess (one per line, format: code — official description — duty):');
+  // 2026-09-16対応: 候補の中には「8桁までしか公式データに行が無い」項番
+  // （例: 9102.29.60系。10桁の統計品目番号はJSONに無く、各類の統計注記
+  // にのみ定義されている）がそのまま含まれる。8桁のまま採用すると米国向け
+  // 通関申告に使えないため、8桁候補には統計注記テーブル（分かる範囲）を
+  // 添えて、AIに必ず10桁へ完成させて答えさせる。
   candidates.forEach(function(c) {
-    lines.push(stripDots(c.code) + ' — ' + (c.desc || '(no description)') + ' — ' + (c.duty || '(no duty listed)'));
+    var line = stripDots(c.code) + ' — ' + (c.desc || '(no description)') + ' — ' + (c.duty || '(no duty listed)');
+    if (c.code.length === 8) {
+      var stat = state.statSuffixMap ? state.statSuffixMap[dotCode(c.code)] : null;
+      if (stat && stat.length) {
+        var sufList = stat.map(function(s) { return s.suffix + '=' + s.desc; }).join(', ');
+        line += ' [8-DIGIT SUBHEADING ONLY — you MUST append one of these 2-digit statistical suffixes: ' + sufList + ']';
+      } else {
+        line += ' [8-DIGIT SUBHEADING ONLY — no statistical suffix table available here; append the correct ' +
+          '2-digit statistical suffix per that chapter\'s official Statistical Notes, or "00" only if this ' +
+          'subheading truly has no further statistical breakout]';
+      }
+    }
+    lines.push(line);
   });
 
   var userContent = lines.join('\n');
@@ -2356,10 +2744,20 @@ function callOpenAIReselect(pageInfo, aiClean, candidates, cb) {
     'You are a US customs (HTSUS) classification expert for Japanese secondhand goods exported to the US.',
     'You previously proposed HTSUS ' + stripDots(aiClean) + ' for this product, but that number does not exist in the official 2026 HTSUS.',
     'You are given a list of official candidate HTSUS codes (each line: code — official description — duty) that are close to your original guess.',
-    'Choose EXACTLY ONE code from this list that best matches the product. Do not invent a new code and do not modify any digit of a listed code.',
+    'Some candidates are marked "8-DIGIT SUBHEADING ONLY": the official HTS subheading itself only has 8 digits ' +
+      'in our data (no 10-digit statistical reporting number is listed), but a full 10-digit code is still ' +
+      'required for a US customs declaration. For those, you MUST turn the 8-digit code into a full 10-digit ' +
+      'code by appending a 2-digit statistical suffix: choose it from the bracketed suffix list when one is ' +
+      'given (based on what is actually being shipped, e.g. movement / case / strap / battery), otherwise use ' +
+      'the correct 2-digit statistical suffix from that chapter\'s official Statistical Notes, or "00" only if ' +
+      'that subheading genuinely has no statistical breakout.',
+    'Choose EXACTLY ONE candidate that best matches the product. Do not invent a new 8-digit subheading and do ' +
+      'not modify any digit of the 8-digit part of a listed code.',
     'Return ONLY a JSON object with exactly these fields:',
-    '  "htsus": digits only, no dots — MUST be copied exactly from one of the candidate codes listed above',
-    '  "reason": one sentence in Japanese explaining why you chose this code',
+    '  "htsus": digits only, no dots — MUST be exactly 10 digits. If the chosen candidate was already 10 digits, ' +
+      'copy it exactly. If it was an 8-DIGIT SUBHEADING ONLY candidate, copy its 8 digits exactly and append the ' +
+      '2-digit statistical suffix you chose.',
+    '  "reason": one sentence in Japanese explaining why you chose this code (mention the suffix if you added one)',
     'If none of the listed candidates fit the product at all, return {"htsus": "", "reason": "<one sentence in Japanese explaining why none fit>"} instead.',
     'Return ONLY the JSON object. No markdown, no explanation outside the JSON.'
   ].join('\n');
@@ -2413,7 +2811,7 @@ function showResultFromAi(aiData, pageInfo) {
   // 実例バグ: AIが返した「4202.32.9550」は実在しないコード（正しい葉は
   // 4202.32.20.00）だったが、公式HTSデータ（search_index.json）と突き合わせず
   // そのまま表示していた。ここで normalizeHtsno() → ensureSearchIndex() →
-  // state.searchMap で必ず検証する。手動入力の applyManualCode() と同じ検証。
+  // verifyHtsCode() で必ず検証する。手動入力の applyManualCode() と同じ検証。
   var clean = normalizeHtsno(aiData.htsus || '');
 
   var aiBtn = document.getElementById('aiAnalyzeBtn');
@@ -2425,35 +2823,93 @@ function showResultFromAi(aiData, pageInfo) {
     if (aiBtn) aiBtn.disabled = false;
   }
 
-  ensureSearchIndex(function() {
-    var found = state.searchMap ? state.searchMap.get(clean) : null;
+  // 2026-09-16追加: 腕時計（HTSUS見出し9101/9102の「腕時計」小見出し）は公式USITCの
+  // 行単位テーブルではなく Watch Worksheetの固定表（WATCH_WORKSHEET_HTS /
+  // watchWorksheetCode()）で判定する（プロダクトオーナー決定・do not argue）。
+  // 該当する場合は以下の通常のverifyHtsCode()照合・差し戻し再選定
+  // （callOpenAIReselect）には進ませない。
+  // 2026-09-16レビュー指摘: isWristwatchが明示されていない場合のフォールバックは
+  // 「腕時計」の小見出しだけに限定する。9101/9102は6桁レベルで
+  // .11/.19/.21/.29=腕時計、.91/.99=懐中時計・その他の時計（腕時計ではない）に
+  // 分かれるため、見出し4桁（9101/9102）だけで判定すると懐中時計まで誤って
+  // Watch Worksheet表に乗せてしまう。懐中時計・その他は従来どおりv1.7.14の
+  // 通常経路（verifyHtsCode照合・差し戻し再選定）を通す。
+  var WRISTWATCH_FALLBACK_SUBHEADINGS = [
+    '910111', '910119', '910121', '910129', // 9101（貴金属ケース）の腕時計
+    '910211', '910212', '910219', '910221', '910229' // 9102（それ以外）の腕時計
+  ];
+  var isWristwatch = (aiData.isWristwatch === true) ||
+    (WRISTWATCH_FALLBACK_SUBHEADINGS.indexOf(clean.substring(0, 6)) !== -1);
 
-    if (found) {
+  if (isWristwatch) {
+    ensureSearchIndex(function() { ensureStatSuffix(function() {
+      showResultFromAiWatch(aiData);
+      finishAiFlow();
+    }); });
+    return;
+  }
+
+  ensureSearchIndex(function() { ensureStatSuffix(function() {
+    var vr = verifyHtsCode(clean);
+
+    // verifyHtsCode() は10桁未満のコードを常に'short'として返すため、'exact'は
+    // ここでは常に10桁ちょうどの完全一致を意味する（clean.length===10チェックは
+    // AI経路で10桁未満を最終確定させてはならないという要件を防御的に明示するため）。
+    if (vr.status === 'exact' && clean.length === 10) {
       // 公式データで見つかった場合は、公式の説明文・税率をそのまま採用する
       // （AIの説明文より優先。税率はAI応答に元々含まれておらず常に空だったため
       // 「税率（参考）」が常に「(情報なし)」になっていた不具合もここで解消する）。
-      applyVerifiedAiResult(aiData, clean, found.d, found.g, null);
+      applyVerifiedAiResult(aiData, vr.code, vr.desc, vr.duty, null);
       finishAiFlow();
       return;
     }
 
-    // 公式データに見つからない場合、まず公式候補（collectHtsCandidates()）の中から
-    // AIに選び直させる（差し戻し／再選定）。候補が無い、またはAPIキー未設定なら
-    // 再選定を試みず、従来どおり即座に「未検証」表示にフォールバックする。
+    if (vr.status === 'parent8') {
+      // 公式データは8桁までしか行が無いが、その延長として正当な10桁コード
+      // （下2桁は各類の統計注記で決まる。search_index.jsonには元々載っていない）。
+      // 8桁へ差し戻さず、AIが返した10桁をそのまま受理する。suffixOk===false/null
+      // の場合の赤警告／グレー注記は updateHtsStatSuffixDisplay() が表示する。
+      var reasonLine = '公式表はこの行を8桁までしか持たず、下2桁は第' +
+        vr.parent.substring(0, 2) + '類の統計注記で決まります。';
+      applyVerifiedAiResult(aiData, vr.code, vr.desc, vr.duty, reasonLine);
+      finishAiFlow();
+      return;
+    }
+
+    // ここに来るのは 'short'（AIが10桁未満のコードを返した）または 'missing'
+    // （8桁の行としても公式データに存在しない）場合。公式候補
+    // （collectHtsCandidates()）の中からAIに選び直させる（差し戻し／再選定）。
+    // 候補が無い、またはAPIキー未設定なら再選定を試みず、従来どおり即座に
+    // 「未検証」表示にフォールバックする。
     var candidates = collectHtsCandidates(clean);
     var offered = candidates.slice(0, 60); // AIに渡す候補は最大60件（表示は別途25件に絞る）
 
     if (offered.length > 0 && state.openaiKey) {
       if (aiMsg) showMessage(aiMsg, 'info', 'AIが提示したコードは公式データに無いため、公式候補から再選定中…');
       callOpenAIReselect(pageInfo, clean, offered, function(err, reselectData) {
-        var reselectedClean = (!err && reselectData && reselectData.htsus)
+        var reselectedRaw = (!err && reselectData && reselectData.htsus)
           ? normalizeHtsno(reselectData.htsus) : '';
-        // 厳密検証: state.searchMapに存在するだけでは不十分で、実際にAIへ提示した
-        // candidates（offered）の中の1件と完全一致することを要求する。
+
+        // 厳密検証: candidates（offered）に提示していない値は一切信用しない。
+        // - 10桁ぴったりで、候補（8桁 or 10桁）のいずれかと完全一致 → そのまま採用。
+        // - 10桁で、先頭8桁が「8桁のみの候補」と一致 → AIが統計品目番号（下2桁）を
+        //   正しく付与したケースとして採用（8桁候補そのものへの差し戻しはしない）。
+        // - それ以外（10桁でない、候補に無い）→ 一致なし＝未検証へフォールバック。
         var matched = null;
-        if (reselectedClean) {
+        var matchedIsParent8 = false;
+        if (reselectedRaw.length === 10) {
           for (var i = 0; i < offered.length; i++) {
-            if (offered[i].code === reselectedClean) { matched = offered[i]; break; }
+            if (offered[i].code === reselectedRaw) { matched = offered[i]; break; }
+          }
+          if (!matched) {
+            var head8 = reselectedRaw.substring(0, 8);
+            for (var j = 0; j < offered.length; j++) {
+              if (offered[j].code.length === 8 && offered[j].code === head8) {
+                matched = { code: reselectedRaw, desc: offered[j].desc, duty: offered[j].duty };
+                matchedIsParent8 = true;
+                break;
+              }
+            }
           }
         }
 
@@ -2461,9 +2917,22 @@ function showResultFromAi(aiData, pageInfo) {
           var reselectReason = '🔁 最初に提示された ' + stripDots(clean) +
             ' は公式HTSデータに存在しなかったため、公式候補の中からAIが再選定しました: ' +
             (reselectData.reason || '');
-          applyVerifiedAiResult(aiData, matched.code, matched.desc, matched.duty, reselectReason);
+          if (matchedIsParent8) {
+            // AIが8桁候補に下2桁（統計品目番号）を付与して10桁化した回答。
+            // verifyHtsCode() で改めて判定し（desc/duty/suffixOkの表示に使う）、
+            // 8桁のままの候補descへ差し戻さない。
+            var vr2 = verifyHtsCode(matched.code);
+            reselectReason += '（公式表はこの行を8桁までしか持たず、下2桁は第' +
+              matched.code.substring(0, 2) + '類の統計注記で決まります）';
+            applyVerifiedAiResult(aiData, matched.code,
+              (vr2.status === 'parent8' ? vr2.desc : matched.desc),
+              (vr2.status === 'parent8' ? vr2.duty : matched.duty),
+              reselectReason);
+          } else {
+            applyVerifiedAiResult(aiData, matched.code, matched.desc, matched.duty, reselectReason);
+          }
         } else {
-          // 再選定に失敗／応答なし／候補外のコードが返った場合は、従来どおり
+          // 再選定に失敗／応答なし／候補外・10桁未満のコードが返った場合は、従来どおり
           // 未検証扱い（赤い警告＋クリック可能な候補一覧）にフォールバックする。
           applyUnverifiedAiResult(aiData, clean);
         }
@@ -2474,7 +2943,111 @@ function showResultFromAi(aiData, pageInfo) {
 
     applyUnverifiedAiResult(aiData, clean);
     finishAiFlow();
+  }); });
+}
+
+/** showResultFromAi() が腕時計（見出し9101/9102）と判定した場合に呼ぶ
+ *  （2026-09-16追加）。公式USITCの行単位テーブルではなく Watch Worksheet 固定表
+ *  （WATCH_WORKSHEET_HTS / watchWorksheetCode()）で判定する（プロダクトオーナー
+ *  決定）。ムーブメント・ケース素材の両方が判明しており、かつその組み合わせが
+ *  表にある場合のみ表のコードで確定表示する（通常の検証済み経路
+ *  applyVerifiedAiResult() を使う）。以下のいずれかの場合はAIに推測させず、
+ *  3つの表コードを選択式候補として提示して state.aiCodeUnverified=true で
+ *  ブロックする（差し戻し再選定 callOpenAIReselect はここでは一切呼ばない）:
+ *   (a) ムーブメントまたはケース素材が "unknown"
+ *   (b) 両方判明しているが、その組み合わせがWatch Worksheetの表に無い
+ *       （2026-09-16レビュー指摘: クオーツ＋貴金属ケースはWatchセクションの
+ *       getHtsCandidates()も候補なし=[]を返す組み合わせであり、
+ *       watchWorksheetCode()はnullを返す。推測で埋めない）
+ *  呼び出し元で ensureSearchIndex()/ensureStatSuffix() 済みであること。 */
+function showResultFromAiWatch(aiData) {
+  var movement = aiData.watchMovement;
+  var preciousRaw = aiData.watchCaseWhollyPreciousMetal;
+  var movementKnown = (movement === 'quartz' || movement === 'mechanical');
+  var preciousKnown = (preciousRaw === true || preciousRaw === false);
+  var code = (movementKnown && preciousKnown) ? watchWorksheetCode(movement, preciousRaw) : null;
+
+  if (code) {
+    var vr = verifyHtsCode(code);
+    var desc = (vr.status === 'exact' || vr.status === 'parent8') ? vr.desc : (aiData.description || '');
+    var duty = (vr.status === 'exact' || vr.status === 'parent8') ? vr.duty : '(情報なし)';
+    var reason = '⌚ 腕時計は Watch Worksheet と同じ判定表で決定しました（ムーブメント: ' +
+      (movement === 'quartz' ? 'クオーツ' : '機械式') + '、ケース: ' +
+      (preciousRaw ? '貴金属' : '非貴金属') + '）';
+    applyVerifiedAiResult(aiData, code, desc, duty, reason);
+    return;
+  }
+
+  // (a) ムーブメント・ケース素材のいずれかが不明、または (b) 両方判明しているが
+  // 表に無い組み合わせ（例: クオーツ＋貴金属ケース） → AIに推測させず、
+  // Watch Worksheetの3つの表コードから人間に選ばせる。
+  // 2026-09-16レビュー指摘: state.leafData.htsus にAIの生の推測コードを
+  // 入れない（空文字にする）。restoreProgress() は保存されたhtsusを
+  // verifyHtsCode()で再検証するため、AIの推測がたまたま実在コードだった場合に
+  // aiCodeUnverifiedブロックが誤って解除されてしまう事故を防ぐ。空文字なら
+  // verifyHtsCode()は必ず status:'short'（0桁・未確定）になり、goToConfirm()の
+  // 10桁ガードでも別途ブロックされる。
+  var missingCombo = (movementKnown && preciousKnown); // (b): 組み合わせ自体は判明も表に無い
+  state.leafData = {
+    htsus: '',
+    hs6:   '',
+    desc:  aiData.description || '',
+    duty:  ''
+  };
+  state.aiCodeUnverified = true;
+  applyAiCommonFields(aiData);
+
+  showResult();
+  document.getElementById('inputTitle').value = sanitizeBrandPlaceholder(aiData.title || '');
+  renderAiResultBadge(aiData, null, null);
+  renderWatchWorksheetUnverifiedWarning(document.getElementById('aiResultBadge'), missingCombo);
+}
+
+/** showResultFromAiWatch() が腕時計のムーブメント/ケース素材を判定できなかった、
+ *  または判明した組み合わせがWatch Worksheetの表に無かった時に呼ぶ。
+ *  renderAiUnverifiedWarning()の腕時計専用版：候補は collectHtsCandidates()
+ *  （公式search_index由来）ではなく、WATCH_WORKSHEET_HTS の3件固定。行クリックで
+ *  selectAiCandidateCode()（既存関数）をそのまま使い、未検証フラグ・警告表示を
+ *  解除する（挙動は既存の候補選択と同じ）。
+ *  @param {boolean} missingCombo true=(b)組み合わせ判明済みだが表に無い／
+ *    false・省略=(a)ムーブメントかケース素材自体が不明。文言のみ変える。 */
+function renderWatchWorksheetUnverifiedWarning(badge, missingCombo) {
+  if (!badge) return;
+  var box = document.createElement('div');
+  box.id = 'aiUnverifiedBox';
+  box.className = 'ai-unverified-box';
+
+  var warn = document.createElement('div');
+  warn.className = 'ai-reason';
+  warn.style.color = '#b3261e';
+  warn.style.fontWeight = 'bold';
+  warn.textContent = missingCombo
+    ? '⚠ 腕時計のムーブメント種別／ケース素材の組み合わせが Watch Worksheet の表にありません。表から選んでください。'
+    : '⚠ 腕時計のムーブメント種別／ケース素材を判定できませんでした。Watch Worksheet の表から選んでください。';
+  box.appendChild(warn);
+
+  var listWrap = document.createElement('div');
+  listWrap.className = 'ai-unverified-candidates';
+
+  WATCH_WORKSHEET_HTS.forEach(function(entry) {
+    var clean = stripDots(entry.code);
+    var vr = verifyHtsCode(clean);
+    var desc = (vr.status === 'exact' || vr.status === 'parent8') ? vr.desc : entry.desc;
+    var duty = (vr.status === 'exact' || vr.status === 'parent8') ? vr.duty : '(情報なし)';
+    var row = document.createElement('div');
+    row.className = 'search-result-item';
+    row.innerHTML =
+      '<div class="search-result-code">' + escapeHtml(clean) + '</div>' +
+      '<div class="search-result-desc">' + escapeHtml(entry.desc) + '</div>' +
+      '<div class="search-result-desc">税率: ' + escapeHtml(duty || '(情報なし)') + '</div>';
+    row.addEventListener('click', function() {
+      selectAiCandidateCode(clean, desc, duty);
+    });
+    listWrap.appendChild(row);
   });
+
+  box.appendChild(listWrap);
+  badge.appendChild(box);
 }
 
 /** showResultFromAi() の共通フィールド設定（leafKey/カテゴリ/ブランド/型番/国/
@@ -2678,6 +3251,10 @@ function selectAiCandidateCode(clean, desc, duty) {
 
   renderCpscAlert(clean);
   saveProgress(); // 候補で確定したコードを保存し、復元時に旧い未検証コードへ戻らないようにする
+  // 候補には8桁までしか公式データが無い行（例: 9102.29.60系）もそのまま含まれる
+  // ため、ここでも verifyHtsCode() ベースのラベル・注記表示を更新する
+  // （10桁未満なら goToConfirm() 側の桁数ガードで先へ進めない）。
+  updateHtsStatSuffixDisplay();
 
   var box = document.getElementById('aiUnverifiedBox');
   if (box) box.remove();
@@ -4551,20 +5128,22 @@ function applyMainCountry() {
 /**
  * ムーブメント種別 × ケース素材（貴金属か否か）から候補を提示。
  * ルール5の代表コード3つのみ。網羅的分類はしない。
+ * 2026-09-16: 3つの代表コードはWATCH_WORKSHEET_HTS（共通定数）に一本化した。
+ * ここでの判定ロジック（クオーツ+貴金属は候補なし、等）自体は変更していない。
  */
 function getHtsCandidates(movementType, caseMaterial) {
   var isQuartz     = (movementType === 'Quartz');
   var isPrecious   = (caseMaterial === 'Wholly of Precious Metal');
   var isMechanical = (movementType === 'Automatic' || movementType === 'Manual');
 
+  var movement = isQuartz ? 'quartz' : (isMechanical ? 'mechanical' : null);
   var candidates = [];
 
-  if (isQuartz && !isPrecious) {
-    candidates.push({ code: '9102.21.5040', desc: '腕時計 / クオーツ / 非貴金属ケース' });
-  } else if (isMechanical && !isPrecious) {
-    candidates.push({ code: '9102.21.7010', desc: '腕時計 / 機械式 / 非貴金属ケース' });
-  } else if (isMechanical && isPrecious) {
-    candidates.push({ code: '9102.11.9500', desc: '腕時計 / 機械式 / 貴金属ケース' });
+  if (movement) {
+    var entry = WATCH_WORKSHEET_HTS.filter(function(e) {
+      return e.movement === movement && e.preciousCase === isPrecious;
+    })[0];
+    if (entry) candidates.push({ code: entry.code, desc: entry.desc });
   }
 
   return candidates;
