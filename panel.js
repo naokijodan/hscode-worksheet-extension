@@ -256,6 +256,92 @@ function verifyHtsCode(clean) {
   return { status: 'missing' };
 }
 
+// -------------------------------------------------------
+// 収集品・コレクター年齢ガード（2026-09-17追加、v1.7.16／同日 製品オーナー方針で拡張）
+// -------------------------------------------------------
+/**
+ * applyCollectorAgeGuard(code, title) — AI経路（callOpenAI）が返したHTSUSコードと
+ * タイトルの矛盾を機械的に検出・補正する純粋関数。
+ *
+ * 背景（実測事実）: 手動ウィザードとタイトルの年齢ルール（フィギュア・収集品は
+ * "For Ages 15+"、トレーディングカードは "For Ages 13+"）は、13+/15+のおもちゃは
+ * 9503.00.00.90（Other＝子供向け製品ではない）、.0071/.0073（膨張式ボールは
+ * .0011/.0013）は子供向け（3歳未満／3〜12歳）という前提で設計されている。
+ * しかしAI経路にはこの対応関係を強制するルールが無く、実例として
+ * 「9503000073」＋タイトル「... For Ages 15+」という自己矛盾が返ってきた。
+ * プロンプト側の指示（callOpenAIのsystemPrompt）だけではAI出力の非決定性を
+ * 防げないため、ここで機械的に補正する。
+ *
+ * 2026-09-17 製品オーナー方針（追加分）: ポケモンセンターのぬいぐるみが
+ * 9503000073＋タイトルに年齢表記が一切無いまま確定した実例を受け、標準決定として
+ * 「9503類はフィギュア／ぬいぐるみの区別なく既定でFor Ages 15+（コレクター）
+ * 扱い、トレーディングカードは13+」に統一。タイトルに"For Ages N+"の記載が
+ * 全く無い場合も、13+以上の記載がある場合と同じく.90へ補正する
+ * （柔らかい・可愛いという見た目だけで子供向けと誤判定しない）。
+ *
+ * @param {string} code 判定対象のHTSUSコード（10桁想定。ドット付きでも可）
+ * @param {string} title 表示予定のタイトル（"For Ages N+" を含むかを見る）
+ * @returns {{code: string, adjusted: boolean, from: string, ageLabel: (string|null), reason: (string|null)}}
+ *   code: 補正後のコード（桁のみ）。補正しない場合は正規化した入力をそのまま返す。
+ *   adjusted: 補正を行ったかどうか。
+ *   from: 補正前の元コード（桁のみ）。
+ *   ageLabel: 補正の根拠になったタイトル中の年齢表記（例: "For Ages 15+"）。
+ *     年齢表記が無く補正した場合、および補正しなかった場合は null。
+ *   reason: 補正理由の種別。'age_label'＝タイトルに13+/15+の明示表記があった、
+ *     'no_age'＝タイトルに年齢表記が一切無かった（既定値適用）。補正しなかった
+ *     場合は null。
+ *
+ * 2026-09-17レビュー指摘対応: 正規化後の桁数が厳密に10桁の場合のみ判定する
+ * （8桁未満・11桁以上は素通り。AIは本来10桁のみを返す前提だが、想定外の
+ * 桁数の文字列に対して部分文字列を誤って「下2桁」と解釈してしまう事故を防ぐ）。
+ */
+function applyCollectorAgeGuard(code, title) {
+  var clean = normalizeHtsno(code || '');
+  var result = { code: clean, adjusted: false, from: clean, ageLabel: null, reason: null };
+
+  if (clean.length !== 10) return result;
+  if (clean.indexOf('95030000') !== 0) return result;
+
+  var suffix = clean.substring(8, 10);
+  var CHILD_SUFFIXES = ['11', '13', '71', '73'];
+  if (CHILD_SUFFIXES.indexOf(suffix) === -1) return result;
+
+  var m = String(title || '').match(/For\s+Ages?\s+(\d{1,2})\s*\+/i);
+  if (!m) {
+    // タイトルに年齢表記が一切無い（例: 新品・ポケモンセンターのぬいぐるみで
+    // AIが年齢を書かなかった）場合、このツールでは9503類の既定を
+    // "For Ages 15+"（コレクター向け）として扱うため、無条件で.90へ補正する。
+    return { code: '9503000090', adjusted: true, from: clean, ageLabel: null, reason: 'no_age' };
+  }
+
+  var age = parseInt(m[1], 10);
+  if (isNaN(age) || age < 13) return result;
+
+  return { code: '9503000090', adjusted: true, from: clean, ageLabel: 'For Ages ' + age + '+', reason: 'age_label' };
+}
+
+/** applyCollectorAgeGuard() の結果からAI判定理由欄（#aiResultBadge）に追記する
+ *  注記テキストを組み立てる共通ヘルパー。adjustedがfalse／guardが無い場合は
+ *  nullを返す（呼び出し側で「追記しない」判定に使える）。showResultFromAi()の
+ *  新規AI呼び出し経路と、差し戻し再選定（callOpenAIReselect結果）経路の
+ *  両方で共用する（2026-09-17レビュー指摘: 年齢正規表現の重複排除）。
+ *  reason:'no_age'（タイトルに年齢表記が無く既定値を適用したケース）は、
+ *  reason:'age_label'（13+/15+の明示表記に合わせたケース）と文言を分ける
+ *  （2026-09-17 製品オーナー方針拡張）。 */
+function buildAgeGuardNote(guard) {
+  if (!guard || !guard.adjusted) return null;
+  if (guard.reason === 'no_age') {
+    return '（9503類はこのツールでは既定で For Ages 15+（コレクター向け）として扱うため ' +
+      dotCode(guard.code) + ' に補正しました。元のAI提示: ' + dotCode(guard.from) +
+      '。タイトルに「For Ages 15+」を追記してください。乳幼児向け玩具など明らかに' +
+      '子供向けの製品なら、タイトルに対象年齢（例: For Ages 3+）を入れて元のコードを' +
+      '手動で適用してください）';
+  }
+  var label = guard.ageLabel || 'For Ages 13+/15+';
+  return '（タイトルの年齢表記「' + label + '」に合わせて ' + dotCode(guard.code) +
+    ' に補正しました。元のAI提示: ' + dotCode(guard.from) + '）';
+}
+
 /** #resultHtsusLabel（コードボックスの見出し）を verifyHtsCode() の結果に合わせて更新する。 */
 function updateHtsusLabel(vr) {
   var labelEl = document.getElementById('resultHtsusLabel');
@@ -2653,11 +2739,12 @@ function callOpenAI(pageInfo, cb) {
     'You are a US customs (HTSUS) classification expert for Japanese secondhand goods exported to the US.',
     'Given product information, return ONLY a JSON object with these exact fields:',
     '  "htsus": 10-digit HTSUS number, digits only, no dots (e.g. "9503000090")',
+    'HTSUS rule for heading 9503.00.00 (toys, dolls, figures, plush, models, puzzles, trading cards): the 10-digit statistical suffix is decided by target age and product nature, not by material or how soft/cute the item looks. The DEFAULT for this heading is "For Ages 15+" -> "9503000090" (Other — not a children\'s product). Character / anime / manga / game merchandise of ANY kind — figures, plush and stuffed toys, dolls, model kits, keychains, Pokemon Center / Sanrio / official character goods, etc. — is a collectible for adults regardless of who might actually play with it, and MUST get "For Ages 15+" and "9503000090" even when the item is new/sealed/unopened. Trading cards and card games also use "For Ages 13+" -> "9503000090". Use "9503000071"/"9503000073" (or "9503000011"/"9503000013" for inflatable/rubber balls) ONLY for products unmistakably made for young children (infant/baby toys, ride-on toys, bath toys, preschool building blocks) — in that case the title MUST carry the explicit target age (e.g. "For Ages 3+"). Never classify a plush or figure as a children\'s toy merely because it is soft or cute. Never return .0071/.0073 together with a 13+/15+ title.',
     '  "hs6": first 6 digits of htsus (e.g. "950300")',
     '  "description": official English HTS category description (e.g. "Toys representing animals or non-human creatures")',
     '  "brand": brand name extracted from product info, or "Generic" if unknown',
     '  "model": model number or product/character name',
-    '  "title": customs declaration title in plain English, max 40 chars, no marketing language, no Japanese characters. Format: <Condition> <Brand> <Character/Model> <Item Type> <Age> (the angle brackets are just labels, never print them). <Brand> is optional — include the real brand name when known; when the brand is unknown or the item is unbranded, OMIT that word/segment entirely and do NOT write any placeholder in its place (never write "Unbranded", "No Brand", "Generic", "[Brand]", or empty brackets []). Start the title with the condition word "Used" or "New" as the very first word: use "Used" if the source indicates a secondhand item (中古, used, pre-owned, 目立った傷や汚れなし, etc.); use "New" ONLY if the source clearly states the item is new/unused/unopened (新品, 未使用, 未開封, etc.); if the condition cannot be determined, use "Used" (items handled by this tool come from Japanese secondhand marketplaces). Always include brand name and character or model name when available. Append age requirement at the end when applicable: use "For Ages 15+" for anime/manga figures and collectibles (not toys for actual play), "For Ages 13+" for trading cards and card games, "For Ages X+" for toys with a clear target age. IGNORE any age label that appears elsewhere in the source information (e.g. another seller\'s listing showing "4+", "対象年齢6歳以上", etc.) — such labels MUST NOT be copied into the title; only use the age rules above. Omit age if the product is not a toy or collectible. Example: "Used Gundam RX-78-2 Figure For Ages 15+"',
+    '  "title": customs declaration title in plain English, max 40 chars, no marketing language, no Japanese characters. Format: <Condition> <Brand> <Character/Model> <Item Type> <Age> (the angle brackets are just labels, never print them). <Brand> is optional — include the real brand name when known; when the brand is unknown or the item is unbranded, OMIT that word/segment entirely and do NOT write any placeholder in its place (never write "Unbranded", "No Brand", "Generic", "[Brand]", or empty brackets []). Start the title with the condition word "Used" or "New" as the very first word: use "Used" if the source indicates a secondhand item (中古, used, pre-owned, 目立った傷や汚れなし, etc.); use "New" ONLY if the source clearly states the item is new/unused/unopened (新品, 未使用, 未開封, etc.); if the condition cannot be determined, use "Used" (items handled by this tool come from Japanese secondhand marketplaces). Always include brand name and character or model name when available. Append age requirement at the end when applicable: use "For Ages 15+" for ANY character/anime/manga/game merchandise of any kind — figures, plush and stuffed toys, dolls, model kits, keychains, Pokemon Center / Sanrio / official character goods, etc. — these are adult collectibles regardless of who might actually play with them, and get "For Ages 15+" even when new/sealed/unopened; use "For Ages 13+" for trading cards and card games; use "For Ages X+" ONLY for products unmistakably made for young children (infant/baby toys, ride-on toys, bath toys, preschool building blocks) with the real target age (e.g. "For Ages 3+"). IGNORE any age label that appears elsewhere in the source information (e.g. another seller\'s listing showing "4+", "対象年齢6歳以上", etc.) — such labels MUST NOT be copied into the title; only use the age rules above. Never label a plush or figure as a children\'s toy merely because it is soft or cute. Omit age if the product is not a toy or collectible. Example: "Used Gundam RX-78-2 Figure For Ages 15+"',
     '  "country": country of origin — default "Japan" for secondhand Japanese marketplace items unless clearly otherwise',
     '  "isWristwatch": true or false. true if the product is a wrist watch or pocket watch (HTSUS heading 9101 or 9102), false for everything else. Always include this field.',
     '  "watchMovement": ONLY when isWristwatch is true: one of exactly "quartz" (battery/quartz movement), "mechanical" (hand-wound or automatic mechanical movement), or "unknown" if you cannot tell from the source information. Omit this field (or use "unknown") when isWristwatch is false.',
@@ -2751,6 +2838,18 @@ function callOpenAIReselect(pageInfo, aiClean, candidates, cb) {
       'given (based on what is actually being shipped, e.g. movement / case / strap / battery), otherwise use ' +
       'the correct 2-digit statistical suffix from that chapter\'s official Statistical Notes, or "00" only if ' +
       'that subheading genuinely has no statistical breakout.',
+    'HTSUS rule for heading 9503.00.00 (toys, dolls, figures, plush, models, puzzles, trading cards): the ' +
+      '10-digit statistical suffix is decided by target age and product nature, not by material or how ' +
+      'soft/cute the item looks. The DEFAULT for this heading is "For Ages 15+" — prefer the candidate ' +
+      '"9503000090" (Other — not a children\'s product) when it appears in the candidate list above. ' +
+      'Character / anime / manga / game merchandise of ANY kind — figures, plush and stuffed toys, dolls, ' +
+      'model kits, keychains, Pokemon Center / Sanrio / official character goods, etc. — is a collectible for ' +
+      'adults regardless of who might actually play with it, and MUST be treated as "For Ages 15+" even when ' +
+      'the item is new/sealed/unopened. Trading cards and card games use "For Ages 13+", also mapping to ' +
+      '"9503000090". Only choose "9503000071"/"9503000073" (or "9503000011"/"9503000013" for inflatable/rubber ' +
+      'balls) for products unmistakably made for young children (infant/baby toys, ride-on toys, bath toys, ' +
+      'preschool building blocks) with an explicit target age of 12 or under. Never treat a plush or figure as ' +
+      'a children\'s toy merely because it is soft or cute.',
     'Choose EXACTLY ONE candidate that best matches the product. Do not invent a new 8-digit subheading and do ' +
       'not modify any digit of the 8-digit part of a listed code.',
     'Return ONLY a JSON object with exactly these fields:',
@@ -2849,6 +2948,18 @@ function showResultFromAi(aiData, pageInfo) {
     return;
   }
 
+  // 2026-09-17追加: コレクター年齢ガード（applyCollectorAgeGuard、v1.7.16）。
+  // AIが13+/15+のタイトル（フィギュア・収集品・トレーディングカード等）と矛盾する
+  // 子供向けコード（.0071/.0073、膨張式ボールは.0011/.0013）を返した場合、
+  // ここで9503.00.00.90（Other＝子供向け製品ではない）へ機械的に補正してから
+  // 下のverifyHtsCode()に通す（補正後のコードも通常どおり実在確認する）。
+  // 腕時計経路（isWristwatch）は上で既にreturn済みのためここを通らず無関係。
+  var ageGuard = applyCollectorAgeGuard(clean, aiData.title || '');
+  var ageGuardNote = buildAgeGuardNote(ageGuard);
+  if (ageGuard.adjusted) {
+    clean = ageGuard.code;
+  }
+
   ensureSearchIndex(function() { ensureStatSuffix(function() {
     var vr = verifyHtsCode(clean);
 
@@ -2859,7 +2970,7 @@ function showResultFromAi(aiData, pageInfo) {
       // 公式データで見つかった場合は、公式の説明文・税率をそのまま採用する
       // （AIの説明文より優先。税率はAI応答に元々含まれておらず常に空だったため
       // 「税率（参考）」が常に「(情報なし)」になっていた不具合もここで解消する）。
-      applyVerifiedAiResult(aiData, vr.code, vr.desc, vr.duty, null);
+      applyVerifiedAiResult(aiData, vr.code, vr.desc, vr.duty, ageGuardNote);
       finishAiFlow();
       return;
     }
@@ -2871,6 +2982,7 @@ function showResultFromAi(aiData, pageInfo) {
       // の場合の赤警告／グレー注記は updateHtsStatSuffixDisplay() が表示する。
       var reasonLine = '公式表はこの行を8桁までしか持たず、下2桁は第' +
         vr.parent.substring(0, 2) + '類の統計注記で決まります。';
+      if (ageGuardNote) reasonLine += ageGuardNote;
       applyVerifiedAiResult(aiData, vr.code, vr.desc, vr.duty, reasonLine);
       finishAiFlow();
       return;
@@ -2914,9 +3026,31 @@ function showResultFromAi(aiData, pageInfo) {
         }
 
         if (matched) {
+          // 2026-09-17追加（レビュー指摘・仕様必須）: 差し戻し再選定でも収集品年齢
+          // ガード（applyCollectorAgeGuard）を適用する。実例: AIが最初に短い／
+          // 存在しないコード（例:"95030000"）を返した場合はガードが素通り
+          // （下2桁が無いため）だが、再選定で公式候補の中から9503.00.00.73等の
+          // 子供向けコードを選び直すことがある。ここで確定させる前にもう一度
+          // ガードを通し、タイトルが"For Ages 13+/15+"なら9503.00.00.90へ補正する。
+          var reselectAgeGuard = applyCollectorAgeGuard(matched.code, aiData.title || '');
+          if (reselectAgeGuard.adjusted) {
+            var vrAge = verifyHtsCode(reselectAgeGuard.code);
+            matched = {
+              code: reselectAgeGuard.code,
+              desc: (vrAge.status === 'exact' || vrAge.status === 'parent8') ? vrAge.desc : matched.desc,
+              duty: (vrAge.status === 'exact' || vrAge.status === 'parent8') ? vrAge.duty : matched.duty
+            };
+            // 補正後は9503.00.00.90（公式データにexactで存在）になるため、
+            // 8桁延長（parent8）の統計注記の特別扱いはもう不要。
+            matchedIsParent8 = false;
+          }
+
           var reselectReason = '🔁 最初に提示された ' + stripDots(clean) +
             ' は公式HTSデータに存在しなかったため、公式候補の中からAIが再選定しました: ' +
             (reselectData.reason || '');
+          if (reselectAgeGuard.adjusted) {
+            reselectReason += buildAgeGuardNote(reselectAgeGuard);
+          }
           if (matchedIsParent8) {
             // AIが8桁候補に下2桁（統計品目番号）を付与して10桁化した回答。
             // verifyHtsCode() で改めて判定し（desc/duty/suffixOkの表示に使う）、
